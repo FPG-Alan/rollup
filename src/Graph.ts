@@ -93,6 +93,8 @@ export default class Graph {
 		this.moduleLoader = new ModuleLoader(this, this.modulesById, this.options, this.pluginDriver);
 	}
 
+
+	// 生成图的入口
 	async build(): Promise<void> {
 		timeStart('generate module graph', 2);
 		await this.generateModuleGraph();
@@ -134,6 +136,7 @@ export default class Graph {
 
 		options.onComment = onCommentOrig;
 
+		// 处理无副作用的注释
 		addAnnotations(comments, ast, code);
 
 		return ast;
@@ -163,12 +166,17 @@ export default class Graph {
 		return foundModule.info;
 	};
 
+
+	// 生成图
 	private async generateModuleGraph(): Promise<void> {
 		({ entryModules: this.entryModules, implicitEntryModules: this.implicitEntryModules } =
 			await this.moduleLoader.addEntryModules(normalizeEntryModules(this.options.input), true));
 		if (this.entryModules.length === 0) {
 			throw new Error('You must supply options.input to rollup');
 		}
+
+		// 这特么就直接push了？
+		// 上面的addEntryModules会从入口点开始分析所有模块， 每次
 		for (const module of this.modulesById.values()) {
 			if (module instanceof Module) {
 				this.modules.push(module);

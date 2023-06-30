@@ -9,6 +9,8 @@ export default class ExpressionStatement extends StatementBase {
 	declare expression: ExpressionNode;
 
 	initialise(): void {
+
+		//
 		if (
 			this.directive &&
 			this.directive !== 'use strict' &&

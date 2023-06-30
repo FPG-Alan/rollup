@@ -42,6 +42,9 @@ export default class ImportExpression extends NodeBase {
 	}
 
 	initialise(): void {
+		// ImportExpression 是 [导入表达式], 代码里是 `import()` 的形式, 也即动态import
+		// ImportDeclaration 是 [导入声明], 代码里是 `import ... from ...` 的形式, 也即静态import
+
 		this.context.addDynamicImport(this);
 	}
 

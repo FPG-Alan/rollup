@@ -40,6 +40,8 @@ export default async function transform(
 	let pluginName = '';
 	const curSource: string = source.code;
 
+
+	//
 	function transformReducer(
 		this: PluginContext,
 		previousCode: string,
@@ -79,6 +81,7 @@ export default async function transform(
 
 	let code: string;
 
+	// 处理transform钩子
 	try {
 		code = await pluginDriver.hookReduceArg0(
 			'transform',

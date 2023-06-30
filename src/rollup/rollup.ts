@@ -29,6 +29,8 @@ export default function rollup(rawInputOptions: GenericConfigObject): Promise<Ro
 	return rollupInternal(rawInputOptions, null);
 }
 
+
+// 根方法
 export async function rollupInternal(
 	rawInputOptions: GenericConfigObject,
 	watcher: RollupWatcher | null
@@ -39,6 +41,7 @@ export async function rollupInternal(
 	);
 	initialiseTimers(inputOptions);
 
+	// 图
 	const graph = new Graph(inputOptions, watcher);
 
 	// remove the cache option from the memory after graph creation (cache is not used anymore)
@@ -49,6 +52,7 @@ export async function rollupInternal(
 	timeStart('BUILD', 1);
 
 	try {
+		// build start, 第一个hook
 		await graph.pluginDriver.hookParallel('buildStart', [inputOptions]);
 		await graph.build();
 	} catch (err: any) {
@@ -61,10 +65,15 @@ export async function rollupInternal(
 		throw err;
 	}
 
+
 	await graph.pluginDriver.hookParallel('buildEnd', []);
 
 	timeEnd('BUILD', 1);
 
+
+	// build结束后返回 RollupBuild 对象
+	// 也就是说， api调用时 其实可以将rollup分为两个阶段分别调用
+	// build完成之后， 选择是否调用generate或者write方法， 或者直接close
 	const result: RollupBuild = {
 		cache: useCache ? graph.getCache() : undefined,
 		async close() {

@@ -93,7 +93,11 @@ export class NodeBase extends ExpressionEntity implements ExpressionNode {
 	esTreeNode: acorn.Node;
 	keys: string[];
 	parent: Node | { context: AstContext; type: string };
+
+	// decalre关键字, 告诉编译器这个属性将会在运行时被赋值
 	declare scope: ChildScope;
+
+	// this.start/end 是在parseNode时赋值的
 	declare start: number;
 	declare type: keyof typeof NodeType;
 	// Nodes can apply custom deoptimizations once they become part of the
@@ -113,8 +117,14 @@ export class NodeBase extends ExpressionEntity implements ExpressionNode {
 		this.parent = parent;
 		this.context = parent.context;
 		this.createScope(parentScope);
+
+
 		this.parseNode(esTreeNode);
+
+		// 这个函数由子类自行实现
 		this.initialise();
+
+		// sourceMap
 		this.context.magicString.addSourcemapLocation(this.start);
 		this.context.magicString.addSourcemapLocation(this.end);
 	}
@@ -197,21 +207,29 @@ export class NodeBase extends ExpressionEntity implements ExpressionNode {
 		}
 	}
 
+	// 处理[当前]节点
+	// 根节点是Program, 递归, 子节点也都是派生自NodeBase, 实例化子节点后还是会执行这个函数
 	parseNode(esTreeNode: GenericEsTreeNode): void {
 		for (const [key, value] of Object.entries(esTreeNode)) {
 			// That way, we can override this function to add custom initialisation and then call super.parseNode
 			if (this.hasOwnProperty(key)) continue;
+
+			// 下划线开头, 注释?
 			if (key.charCodeAt(0) === 95 /* _ */) {
 				if (key === ANNOTATION_KEY) {
+					// 是rollup处理的注释, 直接赋值了?
 					this.annotations = value;
 				} else if (key === INVALID_COMMENT_KEY) {
+					// 删除注释
 					for (const { start, end } of value as acorn.Comment[])
 						this.context.magicString.remove(start, end);
 				}
 			} else if (typeof value !== 'object' || value === null) {
+				// 这种情况不是一个子节点的key, 所以把value放在当前节点上
 				(this as GenericEsTreeNode)[key] = value;
 			} else if (Array.isArray(value)) {
 				(this as GenericEsTreeNode)[key] = [];
+				// 可能时子节点, 对子节点都进行实例化
 				for (const child of value) {
 					(this as GenericEsTreeNode)[key].push(
 						child === null
@@ -220,6 +238,7 @@ export class NodeBase extends ExpressionEntity implements ExpressionNode {
 					);
 				}
 			} else {
+				// 子节点, 实例化
 				(this as GenericEsTreeNode)[key] = new (this.context.getNodeConstructor(value.type))(
 					value,
 					this,

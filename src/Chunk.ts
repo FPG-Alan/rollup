@@ -206,6 +206,8 @@ export default class Chunk {
 		this.suggestedVariableName = makeLegal(this.generateVariableName());
 	}
 
+	// facade 也就是每个chunk的"门面"模块...我现在是这么理解的
+	// 这个chunk的名字就是这个模块的名字
 	private static generateFacade(
 		inputOptions: NormalizedInputOptions,
 		outputOptions: NormalizedOutputOptions,
@@ -252,6 +254,8 @@ export default class Chunk {
 		return chunk;
 	}
 
+
+	// 一个模块能否成为 "facade"
 	canModuleBeFacade(module: Module, exposedVariables: ReadonlySet<Variable>): boolean {
 		const moduleExportNamesByVariable = module.getExportNamesByVariable();
 		for (const exposedVariable of this.exports) {

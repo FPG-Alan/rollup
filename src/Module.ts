@@ -224,6 +224,8 @@ export default class Module {
 	declare scope: ModuleScope;
 	readonly sideEffectDependenciesByVariable = new Map<Variable, Set<Module>>();
 	declare sourcemapChain: DecodedSourceMapOrMissing[];
+
+	// 当前模块引入的模块, 包含import的和reexport的
 	readonly sources = new Set<string>();
 	declare transformFiles?: EmittedFile[];
 	usesTopLevelAwait = false;
@@ -356,29 +358,38 @@ export default class Module {
 		return error(props);
 	}
 
+
+	// 返回当前模块的所有导出名
 	getAllExportNames(): Set<string> {
 		if (this.allExportNames) {
 			return this.allExportNames;
 		}
 		const allExportNames = (this.allExportNames = new Set<string>());
+		// 这个应该就是普通的具名导出
 		for (const name of this.getExports()) {
 			allExportNames.add(name);
 		}
+		// reexport， 从其他模块导入， 再重新导出的
 		for (const name of Object.keys(this.reexportDescriptions)) {
 			allExportNames.add(name);
 		}
+
+		// linkImports 函数内对this.exportAllModules进行了赋值
 		for (const module of this.exportAllModules) {
+			// 外部模块， 导入，但是没有包括在图中
 			if (module instanceof ExternalModule) {
 				allExportNames.add(`*${module.id}`);
 				continue;
 			}
 
+			// 获取所有导出的模块的导出名
 			for (const name of module.getAllExportNames()) {
 				if (name !== 'default') allExportNames.add(name);
 			}
 		}
 		// We do not count the synthetic namespace as a regular export to hide it
 		// from entry signatures and namespace objects
+		// 我们不将合成命名空间算作常规导出，以将其隐藏在条目签名和命名空间对象中
 		if (typeof this.info.syntheticNamedExports === 'string') {
 			allExportNames.delete(this.info.syntheticNamedExports);
 		}
@@ -436,11 +447,15 @@ export default class Module {
 		return (this.relevantDependencies = relevantDependencies);
 	}
 
+
+	// 拿模块的导出名, variable是AST领域的东西， 暂时当作是一个实例
 	getExportNamesByVariable(): Map<Variable, string[]> {
+		// 已经执行过， 直接返回结果
 		if (this.exportNamesByVariable) {
 			return this.exportNamesByVariable;
 		}
 		const exportNamesByVariable = new Map<Variable, string[]>();
+
 		for (const exportName of this.getAllExportNames()) {
 			let [tracedVariable] = this.getVariableForExportName(exportName);
 			if (tracedVariable instanceof ExportDefaultVariable) {
@@ -518,6 +533,7 @@ export default class Module {
 		return this.syntheticNamespace;
 	}
 
+
 	getVariableForExportName(
 		name: string,
 		{
@@ -532,13 +548,19 @@ export default class Module {
 			searchedNamesAndModules?: Map<string, Set<Module | ExternalModule>>;
 		} = EMPTY_OBJECT
 	): [variable: Variable | null, indirectExternal?: boolean] {
+
+		// 两种reexport的情况
 		if (name[0] === '*') {
 			if (name.length === 1) {
 				// export * from './other'
 				return [this.namespace];
 			} else {
+				// 这种时候, export name是 *external
 				// export * from 'external'
+
+				// external module也会出现在图内...
 				const module = this.graph.modulesById.get(name.slice(1)) as ExternalModule;
+				// 到哪个module里面去找
 				return module.getVariableForExportName('*');
 			}
 		}
@@ -559,6 +581,8 @@ export default class Module {
 					reexportDeclaration.start
 				);
 			}
+
+			// 副作用导入应该是 import from 'xxx' 这种吧
 			if (importerForSideEffects) {
 				setAlternativeExporterIfCyclic(variable, importerForSideEffects, this);
 			}
@@ -679,9 +703,20 @@ export default class Module {
 		return this.ast!.included || this.namespace.included || this.importedFromNotTreeshaken;
 	}
 
+
+	// 做了两件事
+	// 一是给所有 importDescriptions/reexportDescriptions 赋值 module 属性
+	// 二是根据 this.exportAllSources 找到对应的 module, 填充 this.exportAllModules
+	// 符合 "link" 这个动作, 但名字改为 linkImportsAndExports 更明确
 	linkImports(): void {
+
+		// 遍历 importDescriptions, 每个 importDescription 找到对应的 module, 写入对应 importDescriptions
 		this.addModulesToImportDescriptions(this.importDescriptions);
+		// 遍历 reexportDescriptions, 每个 reexportDescription 找到对应的 module, 写入对应 reexportDescriptions
 		this.addModulesToImportDescriptions(this.reexportDescriptions);
+
+		// 遍历exportAllSources, 每个source找到对应的module， 区别是internal还是external
+		// 都push到 this.exportAllModules
 		const externalExportAllModules: ExternalModule[] = [];
 		for (const source of this.exportAllSources) {
 			const module = this.graph.modulesById.get(this.resolvedIds[source].id)!;
@@ -701,6 +736,7 @@ export default class Module {
 		return magicString;
 	}
 
+	// 处理AST
 	setSource({
 		ast,
 		code,
@@ -715,6 +751,7 @@ export default class Module {
 	}: TransformModuleJSON & {
 		transformFiles?: EmittedFile[] | undefined;
 	}): void {
+		// 下面处理ast时会使用this.info.code
 		this.info.code = code;
 		this.originalCode = originalCode;
 		this.originalSourcemap = originalSourcemap;
@@ -776,8 +813,14 @@ export default class Module {
 			warn: this.warn.bind(this)
 		};
 
+		// 模块作用域， 第一个参数是全局作用域， 也就是图的作用域
 		this.scope = new ModuleScope(this.graph.scope, this.astContext);
+
+		// 命名空间， 这里只是声明了一个实例， 并且保存当前的module
+		// 后续可能会有进一步的处理
 		this.namespace = new NamespaceVariable(this.astContext);
+
+		// 主要处理模块, 根据ast, 填充module的各个字段, 比如Imports/Exports/dynamicImports/ImportMeta等
 		this.ast = new Program(ast, { context: this.astContext, type: 'Module' }, this.scope);
 		this.info.ast = ast;
 
@@ -883,8 +926,20 @@ export default class Module {
 				argument = argument.quasis[0].value.cooked;
 			}
 		} else if (argument instanceof Literal && typeof argument.value === 'string') {
+			// 类似 import('./c'); 这样的语句, 形成的AST ImportExpression 节点会有一个source属性, 类型为Literal
+			// 大概是这样
+			// "source": {
+			// 	"type": "Literal",
+			// 	"start": 28,
+			// 	"end": 33,
+			// 	"value": "./c",
+			// 	"raw": "'./c'"
+			// }
+			// 所以这里的argument.value也就是 './c'
 			argument = argument.value;
 		}
+
+		// 加入 dynamicImports
 		this.dynamicImports.push({ argument, id: null, node, resolution: null });
 	}
 

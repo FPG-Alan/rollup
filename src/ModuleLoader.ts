@@ -95,6 +95,13 @@ export class ModuleLoader {
 		return result;
 	}
 
+	//
+	/**
+	 * 添加入口模块
+	 * @param unresolvedEntryModules 没有被接些的入口模块
+	 * @param isUserDefined
+	 * @returns
+	 */
 	async addEntryModules(
 		unresolvedEntryModules: readonly UnresolvedModule[],
 		isUserDefined: boolean
@@ -107,7 +114,11 @@ export class ModuleLoader {
 		this.nextEntryModuleIndex += unresolvedEntryModules.length;
 		const firstChunkNamePriority = this.nextChunkNamePriority;
 		this.nextChunkNamePriority += unresolvedEntryModules.length;
+
+		// extendLoadModulesPromise 没啥，就是把内部的 promise 跟 this.latestLoadModulesPromise 合并， 一起promise.all
+		// 另外还有个空的error cache
 		const newEntryModules = await this.extendLoadModulesPromise(
+			// 一个个加载入口模块
 			Promise.all(
 				unresolvedEntryModules.map(({ id, importer }) =>
 					this.loadEntryModule(id, true, importer, null)
@@ -244,6 +255,8 @@ export class ModuleLoader {
 		);
 	}
 
+
+	// 加载文件， 读取内容，
 	private async addModuleSource(
 		id: string,
 		importer: string | undefined,
@@ -254,6 +267,8 @@ export class ModuleLoader {
 		try {
 			source = await this.readQueue.run(
 				async () =>
+					// 可以通过pluginDriver.hookFirst('load', [id])来修改加载的内容
+					// 如果hook不返回， 就直接读取文件内容
 					(await this.pluginDriver.hookFirst('load', [id])) ?? (await fs.readFile(id, 'utf8'))
 			);
 		} catch (err: any) {
@@ -272,6 +287,8 @@ export class ModuleLoader {
 				? source
 				: error(errBadLoader(id));
 		const cachedModule = this.graph.cachedModules.get(id);
+
+		// 如果有缓存， 并且没有自定义的transformCache， 并且没有修改过， 就直接使用缓存
 		if (
 			cachedModule &&
 			!cachedModule.customTransformCache &&
@@ -291,10 +308,13 @@ export class ModuleLoader {
 				for (const emittedFile of cachedModule.transformFiles)
 					this.pluginDriver.emitFile(emittedFile);
 			}
+			// 如果有缓存， 就直接使用缓存
 			module.setSource(cachedModule);
 		} else {
+			// 如果没有缓存， 就使用transform来处理
 			module.updateOptions(sourceDescription);
 			module.setSource(
+				// 处理transform钩子
 				await transform(sourceDescription, module, this.pluginDriver, this.options.onwarn)
 			);
 		}
@@ -362,6 +382,7 @@ export class ModuleLoader {
 			return existingModule;
 		}
 
+		// 形成一个module
 		const module = new Module(
 			this.graph,
 			id,
@@ -371,21 +392,38 @@ export class ModuleLoader {
 			syntheticNamedExports,
 			meta
 		);
+		// 记入缓存
 		this.modulesById.set(id, module);
 		this.graph.watchFiles[id] = true;
+
+
+		// addModuleSource -> Module.setSource
+		// addModuleSource会加载文件内容， 并在module模块内添加处理ast
+		// 在addModuleSource执行完成后, 我们已经拥有了一棵对应当前module的AST的节点实例树
 		const loadPromise: LoadModulePromise = this.addModuleSource(id, importer, module).then(() => [
 			this.getResolveStaticDependencyPromises(module),
 			this.getResolveDynamicImportPromises(module),
 			loadAndResolveDependenciesPromise
 		]);
+
+		// 这里我没看明白， 为什么要这样写，
+		// waitForDependencyResolution 是等待 loadPromise 执行完毕，然后返回 loadPromise 返回的数组的前两条
+		// 但是then回调内没有拿这个返回值啊
+
 		const loadAndResolveDependenciesPromise = waitForDependencyResolution(loadPromise).then(() =>
 			this.pluginDriver.hookParallel('moduleParsed', [module.info])
 		);
 		loadAndResolveDependenciesPromise.catch(() => {
 			/* avoid unhandled promise rejections */
 		});
+
+		// 保存 loadPromise
 		this.moduleLoadPromises.set(module, loadPromise);
+
+		// 这边有一个await
 		const resolveDependencyPromises = await loadPromise;
+
+		// preload 在什么场景下会是true?
 		if (!isPreload) {
 			await this.fetchModuleDependencies(module, ...resolveDependencyPromises);
 		} else if (isPreload === RESOLVE_DEPENDENCIES) {
@@ -394,6 +432,14 @@ export class ModuleLoader {
 		return module;
 	}
 
+	/**
+	 * 获取静态依赖
+	 * @param module
+	 * @param resolveStaticDependencyPromises
+	 * @param resolveDynamicDependencyPromises
+	 * @param loadAndResolveDependenciesPromise
+	 * @returns
+	 */
 	private async fetchModuleDependencies(
 		module: Module,
 		resolveStaticDependencyPromises: readonly ResolveStaticDependencyPromise[],
@@ -529,8 +575,13 @@ export class ModuleLoader {
 		});
 	}
 
+	// 返回一组promise, 这个promise arr执行之后, 返回一个二维数组, 每个元素是一个二元数组, 第一个元素是source, 第二个元素是resolvedId
 	private getResolveStaticDependencyPromises(module: Module): ResolveStaticDependencyPromise[] {
 		return Array.from(
+			// module.sources是在ast节点解析时, 遇到 ImportDeclaration 节点时通过调用module.addImport添加的
+			// 或者re exoprt时也会添加
+			// 是一个string set, 存放导入的文件路径
+
 			module.sources,
 			async source =>
 				[
@@ -604,12 +655,15 @@ export class ModuleLoader {
 		return resolvedId;
 	}
 
+
+	// 加载入口模块
 	private async loadEntryModule(
 		unresolvedId: string,
 		isEntry: boolean,
 		importer: string | undefined,
 		implicitlyLoadedBefore: string | null
 	): Promise<Module> {
+		// 获取模块路径
 		const resolveIdResult = await resolveId(
 			unresolvedId,
 			importer,
@@ -620,6 +674,7 @@ export class ModuleLoader {
 			EMPTY_OBJECT,
 			true
 		);
+
 		if (resolveIdResult == null) {
 			return error(
 				implicitlyLoadedBefore === null
@@ -637,7 +692,11 @@ export class ModuleLoader {
 					: errImplicitDependantCannotBeExternal(unresolvedId, implicitlyLoadedBefore)
 			);
 		}
+
+
+		// 获取模块
 		return this.fetchModule(
+			// 包装成一个统一的object， object.id即为module的路径
 			this.getResolvedIdWithDefaults(
 				typeof resolveIdResult === 'object'
 					? (resolveIdResult as NormalizedResolveIdWithoutDefaults)
