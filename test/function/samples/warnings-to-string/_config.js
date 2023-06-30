@@ -1,6 +1,6 @@
-const assert = require('assert');
+const assert = require('node:assert');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'provides a string conversion for warnings',
 	options: {
 		plugins: {
@@ -13,7 +13,7 @@ module.exports = {
 	warnings(warnings) {
 		assert.deepStrictEqual(warnings.map(String), [
 			'(test-plugin plugin) main.js (1:6) This might be removed',
-			'Generated an empty chunk: "main"'
+			'Generated an empty chunk: "main".'
 		]);
 	}
-};
+});

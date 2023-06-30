@@ -1,10 +1,9 @@
 import type MagicString from 'magic-string';
 import { BLANK } from '../../utils/blank';
 import type { NodeRenderOptions, RenderOptions } from '../../utils/renderHelpers';
-import type { CallOptions } from '../CallOptions';
 import type { DeoptimizableEntity } from '../DeoptimizableEntity';
 import type { HasEffectsContext } from '../ExecutionContext';
-import type { NodeEvent } from '../NodeEvents';
+import type { NodeInteraction, NodeInteractionCalled } from '../NodeInteractions';
 import {
 	EMPTY_PATH,
 	type ObjectPath,
@@ -17,11 +16,7 @@ import Literal from './Literal';
 import * as NodeType from './NodeType';
 import type Property from './Property';
 import SpreadElement from './SpreadElement';
-import {
-	type ExpressionEntity,
-	type LiteralValueOrUnknown,
-	UnknownValue
-} from './shared/Expression';
+import { type ExpressionEntity, type LiteralValueOrUnknown } from './shared/Expression';
 import { NodeBase } from './shared/Node';
 import { ObjectEntity, type ObjectProperty } from './shared/ObjectEntity';
 import { OBJECT_PROTOTYPE } from './shared/ObjectPrototype';
@@ -31,26 +26,24 @@ export default class ObjectExpression extends NodeBase implements DeoptimizableE
 	declare type: NodeType.tObjectExpression;
 	private objectEntity: ObjectEntity | null = null;
 
+	deoptimizeArgumentsOnInteractionAtPath(
+		interaction: NodeInteraction,
+		path: ObjectPath,
+		recursionTracker: PathTracker
+	): void {
+		this.getObjectEntity().deoptimizeArgumentsOnInteractionAtPath(
+			interaction,
+			path,
+			recursionTracker
+		);
+	}
+
 	deoptimizeCache(): void {
 		this.getObjectEntity().deoptimizeAllProperties();
 	}
 
 	deoptimizePath(path: ObjectPath): void {
 		this.getObjectEntity().deoptimizePath(path);
-	}
-
-	deoptimizeThisOnEventAtPath(
-		event: NodeEvent,
-		path: ObjectPath,
-		thisParameter: ExpressionEntity,
-		recursionTracker: PathTracker
-	): void {
-		this.getObjectEntity().deoptimizeThisOnEventAtPath(
-			event,
-			path,
-			thisParameter,
-			recursionTracker
-		);
 	}
 
 	getLiteralValueAtPath(
@@ -63,32 +56,24 @@ export default class ObjectExpression extends NodeBase implements DeoptimizableE
 
 	getReturnExpressionWhenCalledAtPath(
 		path: ObjectPath,
-		callOptions: CallOptions,
+		interaction: NodeInteractionCalled,
 		recursionTracker: PathTracker,
 		origin: DeoptimizableEntity
-	): ExpressionEntity {
+	): [expression: ExpressionEntity, isPure: boolean] {
 		return this.getObjectEntity().getReturnExpressionWhenCalledAtPath(
 			path,
-			callOptions,
+			interaction,
 			recursionTracker,
 			origin
 		);
 	}
 
-	hasEffectsWhenAccessedAtPath(path: ObjectPath, context: HasEffectsContext): boolean {
-		return this.getObjectEntity().hasEffectsWhenAccessedAtPath(path, context);
-	}
-
-	hasEffectsWhenAssignedAtPath(path: ObjectPath, context: HasEffectsContext): boolean {
-		return this.getObjectEntity().hasEffectsWhenAssignedAtPath(path, context);
-	}
-
-	hasEffectsWhenCalledAtPath(
+	hasEffectsOnInteractionAtPath(
 		path: ObjectPath,
-		callOptions: CallOptions,
+		interaction: NodeInteraction,
 		context: HasEffectsContext
 	): boolean {
-		return this.getObjectEntity().hasEffectsWhenCalledAtPath(path, callOptions, context);
+		return this.getObjectEntity().hasEffectsOnInteractionAtPath(path, interaction, context);
 	}
 
 	render(
@@ -105,6 +90,8 @@ export default class ObjectExpression extends NodeBase implements DeoptimizableE
 			code.prependLeft(this.end, ')');
 		}
 	}
+
+	protected applyDeoptimizations() {}
 
 	private getObjectEntity(): ObjectEntity {
 		if (this.objectEntity !== null) {
@@ -124,7 +111,7 @@ export default class ObjectExpression extends NodeBase implements DeoptimizableE
 					SHARED_RECURSION_TRACKER,
 					this
 				);
-				if (keyValue === UnknownValue) {
+				if (typeof keyValue === 'symbol') {
 					properties.push({ key: UnknownKey, kind: property.kind, property });
 					continue;
 				} else {

@@ -1,5 +1,5 @@
-const assert = require('assert');
-const path = require('path');
+const assert = require('node:assert');
+const path = require('node:path');
 
 const ID_MAIN1 = path.join(__dirname, 'main1.js');
 const ID_MAIN2 = path.join(__dirname, 'main2.js');
@@ -9,7 +9,7 @@ const ID_LIB2 = path.join(__dirname, 'lib2.js');
 const ID_LIB3 = path.join(__dirname, 'lib3.js');
 const ID_DEP = path.join(__dirname, 'dep.js');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'supports emitting the same chunk with different and multiple dependencies',
 	options: {
 		input: ['main1', 'main2'],
@@ -34,6 +34,8 @@ module.exports = {
 			},
 			buildEnd() {
 				assert.deepStrictEqual(JSON.parse(JSON.stringify(this.getModuleInfo(ID_MAIN1))), {
+					id: ID_MAIN1,
+					assertions: {},
 					ast: {
 						type: 'Program',
 						start: 0,
@@ -117,31 +119,40 @@ module.exports = {
 					dynamicallyImportedIdResolutions: [],
 					dynamicallyImportedIds: [],
 					dynamicImporters: [],
+					exportedBindings: {
+						'.': []
+					},
+					exports: [],
 					hasDefaultExport: false,
 					moduleSideEffects: true,
-					id: ID_MAIN1,
 					implicitlyLoadedAfterOneOf: [],
 					implicitlyLoadedBefore: [ID_DEP],
 					importedIdResolutions: [
 						{
+							assertions: {},
 							external: false,
 							id: ID_LIB1,
 							meta: {},
 							moduleSideEffects: true,
+							resolvedBy: 'rollup',
 							syntheticNamedExports: false
 						},
 						{
+							assertions: {},
 							external: false,
 							id: ID_LIB1B,
 							meta: {},
 							moduleSideEffects: true,
+							resolvedBy: 'rollup',
 							syntheticNamedExports: false
 						},
 						{
+							assertions: {},
 							external: false,
 							id: ID_LIB2,
 							meta: {},
 							moduleSideEffects: true,
+							resolvedBy: 'rollup',
 							syntheticNamedExports: false
 						}
 					],
@@ -154,6 +165,8 @@ module.exports = {
 					syntheticNamedExports: false
 				});
 				assert.deepStrictEqual(JSON.parse(JSON.stringify(this.getModuleInfo(ID_MAIN2))), {
+					id: ID_MAIN2,
+					assertions: {},
 					ast: {
 						type: 'Program',
 						start: 0,
@@ -237,31 +250,40 @@ module.exports = {
 					dynamicallyImportedIdResolutions: [],
 					dynamicallyImportedIds: [],
 					dynamicImporters: [],
+					exportedBindings: {
+						'.': []
+					},
+					exports: [],
 					hasDefaultExport: false,
 					moduleSideEffects: true,
-					id: ID_MAIN2,
 					implicitlyLoadedAfterOneOf: [],
 					implicitlyLoadedBefore: [ID_DEP],
 					importedIdResolutions: [
 						{
+							assertions: {},
 							external: false,
 							id: ID_LIB1,
 							meta: {},
 							moduleSideEffects: true,
+							resolvedBy: 'rollup',
 							syntheticNamedExports: false
 						},
 						{
+							assertions: {},
 							external: false,
 							id: ID_LIB1B,
 							meta: {},
 							moduleSideEffects: true,
+							resolvedBy: 'rollup',
 							syntheticNamedExports: false
 						},
 						{
+							assertions: {},
 							external: false,
 							id: ID_LIB3,
 							meta: {},
 							moduleSideEffects: true,
+							resolvedBy: 'rollup',
 							syntheticNamedExports: false
 						}
 					],
@@ -274,6 +296,8 @@ module.exports = {
 					syntheticNamedExports: false
 				});
 				assert.deepStrictEqual(JSON.parse(JSON.stringify(this.getModuleInfo(ID_DEP))), {
+					id: ID_DEP,
+					assertions: {},
 					ast: {
 						type: 'Program',
 						start: 0,
@@ -356,31 +380,40 @@ module.exports = {
 					dynamicallyImportedIdResolutions: [],
 					dynamicallyImportedIds: [],
 					dynamicImporters: [],
+					exportedBindings: {
+						'.': []
+					},
+					exports: [],
 					hasDefaultExport: false,
 					moduleSideEffects: true,
-					id: ID_DEP,
 					implicitlyLoadedAfterOneOf: [ID_MAIN1, ID_MAIN2],
 					implicitlyLoadedBefore: [],
 					importedIdResolutions: [
 						{
+							assertions: {},
 							external: false,
 							id: ID_LIB1,
 							meta: {},
 							moduleSideEffects: true,
+							resolvedBy: 'rollup',
 							syntheticNamedExports: false
 						},
 						{
+							assertions: {},
 							external: false,
 							id: ID_LIB2,
 							meta: {},
 							moduleSideEffects: true,
+							resolvedBy: 'rollup',
 							syntheticNamedExports: false
 						},
 						{
+							assertions: {},
 							external: false,
 							id: ID_LIB3,
 							meta: {},
 							moduleSideEffects: true,
+							resolvedBy: 'rollup',
 							syntheticNamedExports: false
 						}
 					],
@@ -395,4 +428,4 @@ module.exports = {
 			}
 		}
 	}
-};
+});

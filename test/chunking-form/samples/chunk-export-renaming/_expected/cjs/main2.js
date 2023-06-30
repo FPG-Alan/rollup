@@ -1,12 +1,10 @@
 'use strict';
 
-Object.defineProperty(exports, '__esModule', { value: true });
-
-var one = require('./generated-one.js');
+var main1 = require('./generated-main1.js');
 
 class Two {
     test() {
-        return one.ONE_CONSTANT;
+        return main1.ONE_CONSTANT;
     }
 }
 

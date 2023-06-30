@@ -1,5 +1,5 @@
-const assert = require('assert');
-const path = require('path');
+const assert = require('node:assert');
+const path = require('node:path');
 
 const ID_OTHER_1 = path.join(__dirname, 'other1.js');
 const ID_OTHER_2 = path.join(__dirname, 'other2.js');
@@ -8,7 +8,7 @@ const ID_OTHER_4 = path.join(__dirname, 'other4.js');
 
 const thirdPluginCalls = new Set();
 
-module.exports = {
+module.exports = defineTest({
 	description: 'prevents infinite loops when several plugins are calling this.resolve in resolveId',
 	options: {
 		plugins: [
@@ -59,4 +59,4 @@ module.exports = {
 			}
 		]
 	}
-};
+});

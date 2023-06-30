@@ -1,12 +1,12 @@
-const assert = require('assert');
-const { readFileSync } = require('fs');
-const path = require('path');
+const assert = require('node:assert');
+const { readFileSync } = require('node:fs');
+const path = require('node:path');
 
 const cachedModules = {
 	'@main.js': 'import foo from "./foo"; export default foo();'
 };
 
-module.exports = {
+module.exports = defineTest({
 	description: 'applies custom resolver to entry point',
 	options: {
 		plugins: [
@@ -25,7 +25,7 @@ module.exports = {
 						return cachedModules[moduleId];
 					}
 
-					return readFileSync(moduleId, 'utf-8');
+					return readFileSync(moduleId, 'utf8');
 				}
 			}
 		]
@@ -33,4 +33,4 @@ module.exports = {
 	exports(exports) {
 		assert.equal(exports, 42);
 	}
-};
+});

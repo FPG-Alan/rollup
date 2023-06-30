@@ -1,4 +1,5 @@
 import * as acorn from 'acorn';
+import flru from 'flru';
 import type ExternalModule from './ExternalModule';
 import Module from './Module';
 import { ModuleLoader, type UnresolvedModule } from './ModuleLoader';
@@ -14,11 +15,19 @@ import type {
 	WatchChangeHook
 } from './rollup/types';
 import { PluginDriver } from './utils/PluginDriver';
+import Queue from './utils/Queue';
 import { BuildPhase } from './utils/buildPhase';
-import { errImplicitDependantIsNotIncluded, error } from './utils/error';
+import { addAnnotations } from './utils/commentAnnotations';
 import { analyseModuleExecution } from './utils/executionOrder';
-import { addAnnotations } from './utils/pureComments';
-import relativeId from './utils/relativeId';
+import { LOGLEVEL_WARN } from './utils/logging';
+import {
+	error,
+	logCircularDependency,
+	logImplicitDependantIsNotIncluded,
+	logMissingExport
+} from './utils/logs';
+import type { PureFunctions } from './utils/pureFunctions';
+import { getPureFunctions } from './utils/pureFunctions';
 import { timeEnd, timeStart } from './utils/timers';
 import { markModuleAndImpureDependenciesAsExecuted } from './utils/traverseStaticDependencies';
 
@@ -45,14 +54,17 @@ function normalizeEntryModules(
 
 export default class Graph {
 	readonly acornParser: typeof acorn.Parser;
+	readonly astLru = flru<acorn.Node>(5);
 	readonly cachedModules = new Map<string, ModuleJSON>();
 	readonly deoptimizationTracker = new PathTracker();
 	entryModules: Module[] = [];
+	readonly fileOperationQueue: Queue;
 	readonly moduleLoader: ModuleLoader;
 	readonly modulesById = new Map<string, Module | ExternalModule>();
 	needsTreeshakingPass = false;
 	phase: BuildPhase = BuildPhase.LOAD_AND_PARSE;
 	readonly pluginDriver: PluginDriver;
+	readonly pureFunctions: PureFunctions;
 	readonly scope = new GlobalScope();
 	readonly watchFiles: Record<string, true> = Object.create(null);
 	watchMode = false;
@@ -78,19 +90,17 @@ export default class Graph {
 
 		if (watcher) {
 			this.watchMode = true;
-			const handleChange: WatchChangeHook = (...args) =>
-				this.pluginDriver.hookSeqSync('watchChange', args);
-			const handleClose = () => this.pluginDriver.hookSeqSync('closeWatcher', []);
-			watcher.on('change', handleChange);
-			watcher.on('close', handleClose);
-			watcher.once('restart', () => {
-				watcher.removeListener('change', handleChange);
-				watcher.removeListener('close', handleClose);
-			});
+			const handleChange = (...parameters: Parameters<WatchChangeHook>) =>
+				this.pluginDriver.hookParallel('watchChange', parameters);
+			const handleClose = () => this.pluginDriver.hookParallel('closeWatcher', []);
+			watcher.onCurrentRun('change', handleChange);
+			watcher.onCurrentRun('close', handleClose);
 		}
 		this.pluginDriver = new PluginDriver(this, options, options.plugins, this.pluginCache);
-		this.acornParser = acorn.Parser.extend(...(options.acornInjectPlugins as any));
+		this.acornParser = acorn.Parser.extend(...(options.acornInjectPlugins as any[]));
 		this.moduleLoader = new ModuleLoader(this, this.modulesById, this.options, this.pluginDriver);
+		this.fileOperationQueue = new Queue(options.maxParallelFileOps);
+		this.pureFunctions = getPureFunctions(options);
 	}
 
 
@@ -100,10 +110,10 @@ export default class Graph {
 		await this.generateModuleGraph();
 		timeEnd('generate module graph', 2);
 
-		timeStart('sort modules', 2);
+		timeStart('sort and bind modules', 2);
 		this.phase = BuildPhase.ANALYSE;
 		this.sortModules();
-		timeEnd('sort modules', 2);
+		timeEnd('sort and bind modules', 2);
 
 		timeStart('mark included statements', 2);
 		this.includeStatements();
@@ -116,14 +126,13 @@ export default class Graph {
 		const onCommentOrig = options.onComment;
 		const comments: acorn.Comment[] = [];
 
-		if (onCommentOrig && typeof onCommentOrig == 'function') {
-			options.onComment = (block, text, start, end, ...args) => {
-				comments.push({ end, start, type: block ? 'Block' : 'Line', value: text });
-				return onCommentOrig.call(options, block, text, start, end, ...args);
-			};
-		} else {
-			options.onComment = comments;
-		}
+		options.onComment =
+			onCommentOrig && typeof onCommentOrig == 'function'
+				? (block, text, start, end, ...parameters) => {
+						comments.push({ end, start, type: block ? 'Block' : 'Line', value: text });
+						return onCommentOrig.call(options, block, text, start, end, ...parameters);
+				  }
+				: comments;
 
 		const ast = this.acornParser.parse(code, {
 			...(this.options.acorn as unknown as acorn.Options),
@@ -187,7 +196,8 @@ export default class Graph {
 	}
 
 	private includeStatements(): void {
-		for (const module of [...this.entryModules, ...this.implicitEntryModules]) {
+		const entryModules = [...this.entryModules, ...this.implicitEntryModules];
+		for (const module of entryModules) {
 			markModuleAndImpureDependenciesAsExecuted(module);
 		}
 		if (this.options.treeshake) {
@@ -207,7 +217,7 @@ export default class Graph {
 				if (treeshakingPass === 1) {
 					// We only include exports after the first pass to avoid issues with
 					// the TDZ detection logic
-					for (const module of [...this.entryModules, ...this.implicitEntryModules]) {
+					for (const module of entryModules) {
 						if (module.preserveSignature !== false) {
 							module.includeAllExports(false);
 							this.needsTreeshakingPass = true;
@@ -223,7 +233,7 @@ export default class Graph {
 		for (const module of this.implicitEntryModules) {
 			for (const dependant of module.implicitlyLoadedAfter) {
 				if (!(dependant.info.isEntry || dependant.isIncluded())) {
-					error(errImplicitDependantIsNotIncluded(dependant));
+					error(logImplicitDependantIsNotIncluded(dependant));
 				}
 			}
 		}
@@ -232,12 +242,7 @@ export default class Graph {
 	private sortModules(): void {
 		const { orderedModules, cyclePaths } = analyseModuleExecution(this.entryModules);
 		for (const cyclePath of cyclePaths) {
-			this.options.onwarn({
-				code: 'CIRCULAR_DEPENDENCY',
-				cycle: cyclePath,
-				importer: cyclePath[0],
-				message: `Circular dependency: ${cyclePath.join(' -> ')}`
-			});
+			this.options.onLog(LOGLEVEL_WARN, logCircularDependency(cyclePath));
 		}
 		this.modules = orderedModules;
 		for (const module of this.modules) {
@@ -248,20 +253,14 @@ export default class Graph {
 
 	private warnForMissingExports(): void {
 		for (const module of this.modules) {
-			for (const importDescription of Object.values(module.importDescriptions)) {
+			for (const importDescription of module.importDescriptions.values()) {
 				if (
 					importDescription.name !== '*' &&
 					!importDescription.module.getVariableForExportName(importDescription.name)[0]
 				) {
-					module.warn(
-						{
-							code: 'NON_EXISTENT_EXPORT',
-							message: `Non-existent export '${
-								importDescription.name
-							}' is imported from ${relativeId(importDescription.module.id)}`,
-							name: importDescription.name,
-							source: importDescription.module.id
-						},
+					module.log(
+						LOGLEVEL_WARN,
+						logMissingExport(importDescription.name, module.id, importDescription.module.id),
 						importDescription.start
 					);
 				}

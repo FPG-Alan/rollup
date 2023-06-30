@@ -18,15 +18,14 @@ export default class TryStatement extends StatementBase {
 		return (
 			((this.context.options.treeshake as NormalizedTreeshakingOptions).tryCatchDeoptimization
 				? this.block.body.length > 0
-				: this.block.hasEffects(context)) ||
-			(this.finalizer !== null && this.finalizer.hasEffects(context))
+				: this.block.hasEffects(context)) || !!this.finalizer?.hasEffects(context)
 		);
 	}
 
 	include(context: InclusionContext, includeChildrenRecursively: IncludeChildren): void {
 		const tryCatchDeoptimization = (this.context.options.treeshake as NormalizedTreeshakingOptions)
 			?.tryCatchDeoptimization;
-		const { brokenFlow } = context;
+		const { brokenFlow, includedLabels } = context;
 		if (!this.directlyIncluded || !tryCatchDeoptimization) {
 			this.included = true;
 			this.directlyIncluded = true;
@@ -34,21 +33,19 @@ export default class TryStatement extends StatementBase {
 				context,
 				tryCatchDeoptimization ? INCLUDE_PARAMETERS : includeChildrenRecursively
 			);
-			if (context.includedLabels.size > 0) {
-				this.includedLabelsAfterBlock = [...context.includedLabels];
+			if (includedLabels.size > 0) {
+				this.includedLabelsAfterBlock = [...includedLabels];
 			}
 			context.brokenFlow = brokenFlow;
 		} else if (this.includedLabelsAfterBlock) {
 			for (const label of this.includedLabelsAfterBlock) {
-				context.includedLabels.add(label);
+				includedLabels.add(label);
 			}
 		}
 		if (this.handler !== null) {
 			this.handler.include(context, includeChildrenRecursively);
 			context.brokenFlow = brokenFlow;
 		}
-		if (this.finalizer !== null) {
-			this.finalizer.include(context, includeChildrenRecursively);
-		}
+		this.finalizer?.include(context, includeChildrenRecursively);
 	}
 }

@@ -1,8 +1,6 @@
 'use strict';
 
-Object.defineProperty(exports, '__esModule', { value: true });
-
-var main2 = require('./generated-main1.js');
+var main2 = require('./generated-main3.js');
 
 
 

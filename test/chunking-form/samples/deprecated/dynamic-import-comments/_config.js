@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'should not remove inline comments inside dynamic import',
 	options: {
 		strictDeprecations: false,
@@ -12,5 +12,6 @@ module.exports = {
 		output: {
 			dynamicImportFunction: 'foobar'
 		}
-	}
-};
+	},
+	expectedWarnings: ['DEPRECATED_FEATURE']
+});

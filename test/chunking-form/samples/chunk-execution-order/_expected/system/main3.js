@@ -1,10 +1,9 @@
-System.register(['./generated-dep111.js'], (function () {
+System.register([], (function () {
 	'use strict';
 	return {
-		setters: [function () {}],
 		execute: (function () {
 
-
+			console.log('111');
 
 		})
 	};

@@ -1,6 +1,6 @@
-module.exports = {
+const { sep } = require('node:path');
+
+module.exports = defineTest({
 	description: 'ESM CLI --plugin /absolute/path',
-	minNodeVersion: 12,
-	skipIfWindows: true,
-	command: `echo 'console.log(1 ? 2 : 3);' | rollup -p "\`pwd\`/my-esm-plugin.mjs={comment: 'Absolute ESM'}"`
-};
+	command: `rollup main.js -p "${__dirname}${sep}my-esm-plugin.mjs={comment: 'Absolute ESM'}"`
+});

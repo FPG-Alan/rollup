@@ -1,5 +1,9 @@
 import type MagicString from 'magic-string';
-import { type RenderOptions, renderStatementList } from '../../utils/renderHelpers';
+import {
+	findFirstOccurrenceOutsideComment,
+	type RenderOptions,
+	renderStatementList
+} from '../../utils/renderHelpers';
 import type { HasEffectsContext, InclusionContext } from '../ExecutionContext';
 import BlockScope from '../scopes/BlockScope';
 import type Scope from '../scopes/Scope';
@@ -30,8 +34,10 @@ export default class StaticBlock extends StatementBase {
 	}
 
 	render(code: MagicString, options: RenderOptions): void {
-		if (this.body.length) {
-			renderStatementList(this.body, code, this.start + 1, this.end - 1, options);
+		if (this.body.length > 0) {
+			const bodyStartPos =
+				findFirstOccurrenceOutsideComment(code.original.slice(this.start, this.end), '{') + 1;
+			renderStatementList(this.body, code, this.start + bodyStartPos, this.end - 1, options);
 		} else {
 			super.render(code, options);
 		}

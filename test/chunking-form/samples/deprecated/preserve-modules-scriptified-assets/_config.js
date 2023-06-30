@@ -1,6 +1,6 @@
-const path = require('path');
+const path = require('node:path');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'scriptified assets have extension in preserveModules output filename',
 	options: {
 		strictDeprecations: false,
@@ -11,17 +11,22 @@ module.exports = {
 				name: 'str-num-plugin',
 				transform(code, id) {
 					switch (path.extname(id)) {
-						case '.num':
+						case '.num': {
 							return { code: `export default ${code.trim()}` };
-						case '.str':
+						}
+						case '.str': {
 							return { code: `export default "${code.trim()}"` };
-						case '':
+						}
+						case '': {
 							return { code: 'export default "COULDN\'T TRANSFORM"' };
-						default:
+						}
+						default: {
 							return null;
+						}
 					}
 				}
 			}
 		]
-	}
-};
+	},
+	expectedWarnings: ['DEPRECATED_FEATURE']
+});

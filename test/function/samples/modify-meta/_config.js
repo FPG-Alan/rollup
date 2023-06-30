@@ -1,10 +1,10 @@
-const assert = require('assert');
-const path = require('path');
+const assert = require('node:assert');
+const path = require('node:path');
 const ID_MAIN = path.join(__dirname, 'main.js');
 
 let initialMeta;
 
-module.exports = {
+module.exports = defineTest({
 	description: 'allows to freely modify moduleInfo.meta and maintain object identity',
 	options: {
 		plugins: [
@@ -63,4 +63,4 @@ module.exports = {
 			}
 		]
 	}
-};
+});

@@ -4,12 +4,14 @@ import type { HasEffectsContext } from '../ExecutionContext';
 import type ClassDeclaration from './ClassDeclaration';
 import type ExportSpecifier from './ExportSpecifier';
 import type FunctionDeclaration from './FunctionDeclaration';
+import type ImportAttribute from './ImportAttribute';
 import type Literal from './Literal';
 import type * as NodeType from './NodeType';
 import type VariableDeclaration from './VariableDeclaration';
 import { type Node, NodeBase } from './shared/Node';
 
 export default class ExportNamedDeclaration extends NodeBase {
+	declare assertions: ImportAttribute[];
 	declare declaration: FunctionDeclaration | ClassDeclaration | VariableDeclaration | null;
 	declare needsBoundaries: true;
 	declare source: Literal<string> | null;
@@ -18,11 +20,11 @@ export default class ExportNamedDeclaration extends NodeBase {
 
 	bind(): void {
 		// Do not bind specifiers
-		if (this.declaration !== null) this.declaration.bind();
+		this.declaration?.bind();
 	}
 
 	hasEffects(context: HasEffectsContext): boolean {
-		return this.declaration !== null && this.declaration.hasEffects(context);
+		return !!this.declaration?.hasEffects(context);
 	}
 
 	initialise(): void {
@@ -38,6 +40,8 @@ export default class ExportNamedDeclaration extends NodeBase {
 			(this.declaration as Node).render(code, options, { end, start });
 		}
 	}
+
+	protected applyDeoptimizations() {}
 }
 
 ExportNamedDeclaration.prototype.needsBoundaries = true;

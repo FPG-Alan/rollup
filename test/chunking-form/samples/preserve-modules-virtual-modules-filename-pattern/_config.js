@@ -1,11 +1,11 @@
-module.exports = {
+module.exports = defineTest({
 	description:
 		'Generates actual files whose filename adheres to entryFileNames for virtual modules when preserving modules',
 	options: {
 		input: 'main.js',
 		output: {
 			preserveModules: true,
-			entryFileNames: 'entry-[name]-[format]-[ext][extname][assetExtname].mjs'
+			entryFileNames: '[name]-[format]-[hash].mjs'
 		},
 		plugins: [
 			{
@@ -31,4 +31,4 @@ module.exports = {
 			}
 		]
 	}
-};
+});

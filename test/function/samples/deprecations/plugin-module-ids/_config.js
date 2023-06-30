@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'provides all module ids on the plugin context',
 	options: {
 		external: ['path'],
@@ -15,6 +15,7 @@ module.exports = {
 		message:
 			'Accessing "this.moduleIds" on the plugin context by plugin test is deprecated. The "this.getModuleIds" plugin context function should be used instead.',
 		plugin: 'test',
-		pluginCode: 'DEPRECATED_FEATURE'
+		pluginCode: 'DEPRECATED_FEATURE',
+		url: 'https://rollupjs.org/plugin-development/#this-getmoduleids'
 	}
-};
+});

@@ -1,11 +1,11 @@
-const assert = require('assert');
+const assert = require('node:assert');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'allows external module to be configured',
 	options: {
 		external: ['path']
 	},
 	exports() {
-		assert.equal(require('path').resolve.configured, 'yes');
+		assert.equal(require('node:path').resolve.configured, 'yes');
 	}
-};
+});

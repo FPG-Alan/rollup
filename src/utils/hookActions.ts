@@ -1,39 +1,63 @@
-import process from 'process';
+import process from 'node:process';
+import type { HookAction, PluginDriver } from './PluginDriver';
 
-const unfulfilledActions = new Set<[string, string, Parameters<any>]>();
-
-export function addUnresolvedAction(actionTuple: [string, string, Parameters<any>]): void {
-	unfulfilledActions.add(actionTuple);
-}
-
-export function resolveAction(actionTuple: [string, string, Parameters<any>]): void {
-	unfulfilledActions.delete(actionTuple);
-}
-
-function formatAction([pluginName, hookName, args]: [string, string, Parameters<any>]): string {
-	let action = `(${pluginName}) ${hookName}`;
+function formatAction([pluginName, hookName, parameters]: HookAction): string {
+	const action = `(${pluginName}) ${hookName}`;
 	const s = JSON.stringify;
 	switch (hookName) {
-		case 'resolveId':
-			action += ` ${s(args[0])} ${s(args[1])}`;
-			break;
-		case 'load':
-			action += ` ${s(args[0])}`;
-			break;
-		case 'transform':
-			action += ` ${s(args[1])}`;
-			break;
+		case 'resolveId': {
+			return `${action} ${s(parameters[0])} ${s(parameters[1])}`;
+		}
+		case 'load': {
+			return `${action} ${s(parameters[0])}`;
+		}
+		case 'transform': {
+			return `${action} ${s(parameters[1])}`;
+		}
+		case 'shouldTransformCachedModule': {
+			return `${action} ${s((parameters[0] as { id: string }).id)}`;
+		}
+		case 'moduleParsed': {
+			return `${action} ${s((parameters[0] as { id: string }).id)}`;
+		}
 	}
 	return action;
 }
 
-process.on('exit', () => {
-	if (unfulfilledActions.size) {
-		let err = '[!] Error: unfinished hook action(s) on exit:\n';
-		for (const action of unfulfilledActions) {
-			err += formatAction(action) + '\n';
+let handleBeforeExit: null | (() => void) = null;
+const rejectByPluginDriver = new Map<PluginDriver, (reason: Error) => void>();
+
+export async function catchUnfinishedHookActions<T>(
+	pluginDriver: PluginDriver,
+	callback: () => Promise<T>
+): Promise<T> {
+	const emptyEventLoopPromise = new Promise<T>((_, reject) => {
+		rejectByPluginDriver.set(pluginDriver, reject);
+		if (!handleBeforeExit) {
+			// We only ever create a single event listener to avoid max listener and
+			// other issues
+			handleBeforeExit = () => {
+				for (const [pluginDriver, reject] of rejectByPluginDriver) {
+					const unfulfilledActions = pluginDriver.getUnfulfilledHookActions();
+					reject(
+						new Error(
+							`Unexpected early exit. This happens when Promises returned by plugins cannot resolve. Unfinished hook action(s) on exit:\n` +
+								[...unfulfilledActions].map(formatAction).join('\n')
+						)
+					);
+				}
+			};
+			process.once('beforeExit', handleBeforeExit);
 		}
-		console.error('%s', err);
-		process.exit(1);
+	});
+
+	try {
+		return await Promise.race([callback(), emptyEventLoopPromise]);
+	} finally {
+		rejectByPluginDriver.delete(pluginDriver);
+		if (rejectByPluginDriver.size === 0) {
+			process.off('beforeExit', handleBeforeExit!);
+			handleBeforeExit = null;
+		}
 	}
-});
+}

@@ -1,11 +1,11 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'handles fully deoptimized objects',
 	context: {
-		require(id) {
+		require() {
 			return { unknown: 'prop' };
 		}
 	},
 	options: {
 		external: ['external']
 	}
-};
+});

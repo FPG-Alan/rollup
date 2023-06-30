@@ -1,9 +1,9 @@
-const path = require('path');
+const path = require('node:path');
 let noImporterReferenceId;
 let mainReferenceId;
 let nestedReferenceId;
 
-module.exports = {
+module.exports = defineTest({
 	description: 'allows specifying an importer when resolving ids',
 	options: {
 		input: 'main',
@@ -32,4 +32,4 @@ module.exports = {
 			}
 		}
 	}
-};
+});

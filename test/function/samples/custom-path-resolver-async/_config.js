@@ -1,28 +1,20 @@
-const assert = require('assert');
-const path = require('path');
+const assert = require('node:assert');
+const path = require('node:path');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'uses a custom path resolver (asynchronous)',
 	options: {
 		plugins: [
 			{
 				resolveId(importee) {
-					let resolved;
-
 					if (path.normalize(importee) === path.join(__dirname, 'main.js')) return importee;
 
-					if (importee === 'foo') {
-						resolved = path.join(__dirname, 'bar.js');
-					} else {
-						resolved = false;
-					}
-
-					return Promise.resolve(resolved);
+					return Promise.resolve(importee === 'foo' ? path.join(__dirname, 'bar.js') : false);
 				}
 			}
 		]
 	},
 	exports(exports) {
-		assert.strictEqual(exports.path, require('path'));
+		assert.strictEqual(exports.path, require('node:path'));
 	}
-};
+});

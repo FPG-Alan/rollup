@@ -1,5 +1,6 @@
-const assert = require('assert');
-const path = require('path');
+const assert = require('node:assert');
+const path = require('node:path');
+const { getObject } = require('../../../utils');
 
 const ID_MAIN = path.join(__dirname, 'main.js');
 const ID_FOO = path.join(__dirname, 'foo.js');
@@ -8,16 +9,21 @@ const ID_PATH = 'path';
 
 let rendered = false;
 
-module.exports = {
+module.exports = defineTest({
 	description: 'provides module information on the plugin context',
 	options: {
 		external: ['path'],
 		plugins: {
 			load(id) {
-				assert.deepStrictEqual(this.getModuleInfo(id), {
+				assert.deepStrictEqual(JSON.parse(JSON.stringify(this.getModuleInfo(id))), {
+					assertions: {},
 					ast: null,
 					code: null,
 					dynamicImporters: [],
+					exportedBindings: {
+						'.': []
+					},
+					exports: [],
 					hasDefaultExport: null,
 					dynamicallyImportedIdResolutions: [],
 					dynamicallyImportedIds: [],
@@ -38,11 +44,16 @@ module.exports = {
 			renderStart() {
 				rendered = true;
 				assert.deepStrictEqual(
-					JSON.parse(
-						JSON.stringify([...this.getModuleIds()].sort().map(id => this.getModuleInfo(id)))
+					getObject(
+						[...this.getModuleIds()].map(id => [
+							id,
+							JSON.parse(JSON.stringify(this.getModuleInfo(id)))
+						])
 					),
-					[
-						{
+					{
+						[ID_FOO]: {
+							id: ID_FOO,
+							assertions: {},
 							ast: {
 								type: 'Program',
 								start: 0,
@@ -106,19 +117,22 @@ module.exports = {
 							},
 							code: "import path from 'path';\n\nexport const foo = path.resolve('foo');\n",
 							dynamicallyImportedIdResolutions: [],
+							exportedBindings: { '.': ['foo'] },
+							exports: ['foo'],
 							dynamicallyImportedIds: [],
 							dynamicImporters: [],
 							hasDefaultExport: false,
 							moduleSideEffects: true,
-							id: ID_FOO,
 							implicitlyLoadedAfterOneOf: [],
 							implicitlyLoadedBefore: [],
 							importedIdResolutions: [
 								{
+									assertions: {},
 									external: true,
 									id: ID_PATH,
 									meta: {},
 									moduleSideEffects: true,
+									resolvedBy: 'rollup',
 									syntheticNamedExports: false
 								}
 							],
@@ -130,7 +144,9 @@ module.exports = {
 							meta: {},
 							syntheticNamedExports: false
 						},
-						{
+						[ID_MAIN]: {
+							id: ID_MAIN,
+							assertions: {},
 							ast: {
 								type: 'Program',
 								start: 0,
@@ -257,33 +273,43 @@ module.exports = {
 							code: "export { foo } from './foo.js';\nexport const nested = import('./nested/nested');\nexport const path = import('path');\nexport const pathAgain = import(thePath);\n",
 							dynamicallyImportedIdResolutions: [
 								{
+									assertions: {},
 									external: false,
 									id: ID_NESTED,
 									meta: {},
 									moduleSideEffects: true,
+									resolvedBy: 'rollup',
 									syntheticNamedExports: false
 								},
 								{
+									assertions: {},
 									external: true,
 									id: ID_PATH,
 									meta: {},
 									moduleSideEffects: true,
+									resolvedBy: 'rollup',
 									syntheticNamedExports: false
 								}
 							],
 							dynamicallyImportedIds: [ID_NESTED, ID_PATH],
 							dynamicImporters: [],
+							exportedBindings: {
+								'.': ['nested', 'path', 'pathAgain'],
+								'./foo.js': ['foo']
+							},
+							exports: ['nested', 'path', 'pathAgain', 'foo'],
 							hasDefaultExport: false,
 							moduleSideEffects: true,
-							id: ID_MAIN,
 							implicitlyLoadedAfterOneOf: [],
 							implicitlyLoadedBefore: [],
 							importedIdResolutions: [
 								{
+									assertions: {},
 									external: false,
 									id: ID_FOO,
 									meta: {},
 									moduleSideEffects: true,
+									resolvedBy: 'rollup',
 									syntheticNamedExports: false
 								}
 							],
@@ -295,7 +321,9 @@ module.exports = {
 							meta: {},
 							syntheticNamedExports: false
 						},
-						{
+						[ID_NESTED]: {
+							id: ID_NESTED,
+							assertions: {},
 							ast: {
 								type: 'Program',
 								start: 0,
@@ -364,17 +392,20 @@ module.exports = {
 							dynamicallyImportedIdResolutions: [],
 							dynamicallyImportedIds: [],
 							dynamicImporters: [ID_MAIN],
+							exports: ['nested'],
+							exportedBindings: { '.': ['nested'] },
 							hasDefaultExport: false,
 							moduleSideEffects: true,
-							id: ID_NESTED,
 							implicitlyLoadedAfterOneOf: [],
 							implicitlyLoadedBefore: [],
 							importedIdResolutions: [
 								{
+									assertions: {},
 									external: false,
 									id: ID_FOO,
 									meta: {},
 									moduleSideEffects: true,
+									resolvedBy: 'rollup',
 									syntheticNamedExports: false
 								}
 							],
@@ -386,15 +417,18 @@ module.exports = {
 							meta: {},
 							syntheticNamedExports: false
 						},
-						{
+						[ID_PATH]: {
+							id: ID_PATH,
+							assertions: {},
 							ast: null,
 							code: null,
 							dynamicallyImportedIdResolutions: [],
 							dynamicallyImportedIds: [],
 							dynamicImporters: [ID_MAIN],
+							exportedBindings: null,
+							exports: null,
 							hasDefaultExport: null,
 							moduleSideEffects: true,
-							id: ID_PATH,
 							implicitlyLoadedAfterOneOf: [],
 							implicitlyLoadedBefore: [],
 							importedIdResolutions: [],
@@ -406,7 +440,7 @@ module.exports = {
 							meta: {},
 							syntheticNamedExports: false
 						}
-					]
+					}
 				);
 			}
 		}
@@ -417,4 +451,4 @@ module.exports = {
 	bundle() {
 		assert.ok(rendered);
 	}
-};
+});

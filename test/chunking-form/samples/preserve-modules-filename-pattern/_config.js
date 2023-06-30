@@ -1,11 +1,28 @@
-const path = require('path');
+const assert = require('node:assert');
+const path = require('node:path');
 
-module.exports = {
+const expectedNames = new Set([
+	'nested/a',
+	'b.str',
+	'c',
+	'd',
+	'e',
+	'f',
+	'g',
+	'h',
+	'main',
+	'no-ext'
+]);
+
+module.exports = defineTest({
 	description: 'entryFileNames pattern supported in combination with preserveModules',
 	options: {
-		input: 'src/main.ts',
+		input: 'src/main.js',
 		output: {
-			entryFileNames: 'entry-[name]-[format]-[ext][extname][assetExtname].js',
+			entryFileNames({ name }) {
+				assert.ok(expectedNames.has(name), `Unexpected name ${name}.`);
+				return '[name]-[format]-[hash].js';
+			},
 			preserveModules: true
 		},
 		plugins: [
@@ -13,13 +30,15 @@ module.exports = {
 				name: 'str-plugin',
 				transform(code, id) {
 					switch (path.extname(id)) {
-						case '.str':
+						case '.str': {
 							return { code: `export default "${code.trim()}"` };
-						default:
+						}
+						default: {
 							return null;
+						}
 					}
 				}
 			}
 		]
 	}
-};
+});

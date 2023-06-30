@@ -1,11 +1,11 @@
-const assert = require('assert');
+const assert = require('node:assert');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'external namespace reexport',
 	options: {
 		external: ['external'],
 		output: {
-			namespaceToStringTag: true
+			generatedCode: { symbols: true }
 		}
 	},
 	exports(exports) {
@@ -13,4 +13,4 @@ module.exports = {
 		assert.strictEqual(exports[Symbol.toStringTag], 'Module');
 		assert.strictEqual(exports.maths.external, true);
 	}
-};
+});

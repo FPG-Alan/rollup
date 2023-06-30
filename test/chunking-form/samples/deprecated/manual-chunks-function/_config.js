@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'allows to define manual chunks via a function',
 	options: {
 		strictDeprecations: false,
@@ -8,5 +8,6 @@ module.exports = {
 				return `chunk-${id[id.length - 4]}`;
 			}
 		}
-	}
-};
+	},
+	expectedWarnings: ['DEPRECATED_FEATURE']
+});

@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'throws when setting the asset source twice',
 	options: {
 		plugins: {
@@ -13,8 +13,8 @@ module.exports = {
 	error: {
 		code: 'PLUGIN_ERROR',
 		hook: 'buildEnd',
-		message: 'Unable to set the source for asset "d59386e0", source already set.',
+		message: 'Unable to set the source for asset "6b86b273", source already set.',
 		plugin: 'test-plugin',
 		pluginCode: 'ASSET_SOURCE_ALREADY_SET'
 	}
-};
+});

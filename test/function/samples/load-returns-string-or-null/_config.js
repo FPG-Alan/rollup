@@ -1,6 +1,7 @@
-const path = require('path');
+const path = require('node:path');
+const ID_MAIN = path.join(__dirname, 'main.js');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'throws error if load returns something wacky',
 	options: {
 		plugins: [
@@ -14,7 +15,8 @@ module.exports = {
 	},
 	error: {
 		code: 'BAD_LOADER',
-		message: `Error loading main.js: plugin load hook should return a string, a { code, map } object, or nothing/null`,
-		watchFiles: [path.join(__dirname, 'main.js')]
+		watchFiles: [ID_MAIN],
+		message:
+			'Error loading "main.js": plugin load hook should return a string, a { code, map } object, or nothing/null.'
 	}
-};
+});

@@ -1,9 +1,5 @@
 'use strict';
 
-Object.defineProperty(exports, '__esModule', { value: true });
+const sharedValue = 'shared';
 
-var shared = require('./chunks/shared.js');
-
-
-
-exports.sharedValue = shared.sharedValue;
+exports.sharedValue = sharedValue;

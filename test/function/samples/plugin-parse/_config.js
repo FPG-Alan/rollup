@@ -1,6 +1,6 @@
 const MagicString = require('magic-string');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'plugin transform hooks can use `this.parse(code, options)`',
 	options: {
 		plugins: [
@@ -14,16 +14,16 @@ module.exports = {
 			}
 		]
 	}
-};
+});
 
 function enforceTheAnswer(ast, magicString) {
-	ast.body.forEach(node => {
+	for (const node of ast.body) {
 		if (node.type === 'VariableDeclaration') {
-			node.declarations.forEach(decl => {
+			for (const decl of node.declarations) {
 				if (decl.id.name === 'answer') {
 					magicString.overwrite(decl.init.start, decl.init.end, '42');
 				}
-			});
+			}
 		}
-	});
+	}
 }

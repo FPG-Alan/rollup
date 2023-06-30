@@ -4,8 +4,10 @@ import type { HasEffectsContext, InclusionContext } from '../ExecutionContext';
 import BlockScope from '../scopes/BlockScope';
 import type Scope from '../scopes/Scope';
 import { EMPTY_PATH } from '../utils/PathTracker';
+import type MemberExpression from './MemberExpression';
 import type * as NodeType from './NodeType';
 import type VariableDeclaration from './VariableDeclaration';
+import { UNKNOWN_EXPRESSION } from './shared/Expression';
 import {
 	type ExpressionNode,
 	type IncludeChildren,
@@ -13,48 +15,36 @@ import {
 	type StatementNode
 } from './shared/Node';
 import type { PatternNode } from './shared/Pattern';
+import { hasLoopBodyEffects, includeLoopBody } from './shared/loops';
 
 export default class ForInStatement extends StatementBase {
 	declare body: StatementNode;
-	declare left: VariableDeclaration | PatternNode;
+	declare left: VariableDeclaration | PatternNode | MemberExpression;
 	declare right: ExpressionNode;
 	declare type: NodeType.tForInStatement;
-	protected deoptimized = false;
 
 	createScope(parentScope: Scope): void {
 		this.scope = new BlockScope(parentScope);
 	}
 
 	hasEffects(context: HasEffectsContext): boolean {
-		if (!this.deoptimized) this.applyDeoptimizations();
-		if (
-			(this.left &&
-				(this.left.hasEffects(context) ||
-					this.left.hasEffectsWhenAssignedAtPath(EMPTY_PATH, context))) ||
-			(this.right && this.right.hasEffects(context))
-		)
-			return true;
-		const {
-			brokenFlow,
-			ignore: { breaks, continues }
-		} = context;
-		context.ignore.breaks = true;
-		context.ignore.continues = true;
-		if (this.body.hasEffects(context)) return true;
-		context.ignore.breaks = breaks;
-		context.ignore.continues = continues;
-		context.brokenFlow = brokenFlow;
-		return false;
+		const { body, deoptimized, left, right } = this;
+		if (!deoptimized) this.applyDeoptimizations();
+		if (left.hasEffectsAsAssignmentTarget(context, false) || right.hasEffects(context)) return true;
+		return hasLoopBodyEffects(context, body);
 	}
 
 	include(context: InclusionContext, includeChildrenRecursively: IncludeChildren): void {
-		if (!this.deoptimized) this.applyDeoptimizations();
+		const { body, deoptimized, left, right } = this;
+		if (!deoptimized) this.applyDeoptimizations();
 		this.included = true;
-		this.left.include(context, includeChildrenRecursively || true);
-		this.right.include(context, includeChildrenRecursively);
-		const { brokenFlow } = context;
-		this.body.includeAsSingleStatement(context, includeChildrenRecursively);
-		context.brokenFlow = brokenFlow;
+		left.includeAsAssignmentTarget(context, includeChildrenRecursively || true, false);
+		right.include(context, includeChildrenRecursively);
+		includeLoopBody(context, body, includeChildrenRecursively);
+	}
+
+	initialise() {
+		this.left.setAssignedValue(UNKNOWN_EXPRESSION);
 	}
 
 	render(code: MagicString, options: RenderOptions): void {

@@ -3,9 +3,11 @@ import { NO_SEMICOLON, type RenderOptions } from '../../utils/renderHelpers';
 import type { InclusionContext } from '../ExecutionContext';
 import BlockScope from '../scopes/BlockScope';
 import type Scope from '../scopes/Scope';
-import { EMPTY_PATH } from '../utils/PathTracker';
+import { EMPTY_PATH, UNKNOWN_PATH } from '../utils/PathTracker';
+import type MemberExpression from './MemberExpression';
 import type * as NodeType from './NodeType';
 import type VariableDeclaration from './VariableDeclaration';
+import { UNKNOWN_EXPRESSION } from './shared/Expression';
 import {
 	type ExpressionNode,
 	type IncludeChildren,
@@ -13,14 +15,14 @@ import {
 	type StatementNode
 } from './shared/Node';
 import type { PatternNode } from './shared/Pattern';
+import { includeLoopBody } from './shared/loops';
 
 export default class ForOfStatement extends StatementBase {
 	declare await: boolean;
 	declare body: StatementNode;
-	declare left: VariableDeclaration | PatternNode;
+	declare left: VariableDeclaration | PatternNode | MemberExpression;
 	declare right: ExpressionNode;
 	declare type: NodeType.tForOfStatement;
-	protected deoptimized = false;
 
 	createScope(parentScope: Scope): void {
 		this.scope = new BlockScope(parentScope);
@@ -33,13 +35,16 @@ export default class ForOfStatement extends StatementBase {
 	}
 
 	include(context: InclusionContext, includeChildrenRecursively: IncludeChildren): void {
-		if (!this.deoptimized) this.applyDeoptimizations();
+		const { body, deoptimized, left, right } = this;
+		if (!deoptimized) this.applyDeoptimizations();
 		this.included = true;
-		this.left.include(context, includeChildrenRecursively || true);
-		this.right.include(context, includeChildrenRecursively);
-		const { brokenFlow } = context;
-		this.body.includeAsSingleStatement(context, includeChildrenRecursively);
-		context.brokenFlow = brokenFlow;
+		left.includeAsAssignmentTarget(context, includeChildrenRecursively || true, false);
+		right.include(context, includeChildrenRecursively);
+		includeLoopBody(context, body, includeChildrenRecursively);
+	}
+
+	initialise() {
+		this.left.setAssignedValue(UNKNOWN_EXPRESSION);
 	}
 
 	render(code: MagicString, options: RenderOptions): void {
@@ -55,6 +60,7 @@ export default class ForOfStatement extends StatementBase {
 	protected applyDeoptimizations(): void {
 		this.deoptimized = true;
 		this.left.deoptimizePath(EMPTY_PATH);
+		this.right.deoptimizePath(UNKNOWN_PATH);
 		this.context.requestTreeshakingPass();
 	}
 }

@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'deconflicts the interop function',
 	options: {
 		external(id) {
@@ -8,21 +8,24 @@ module.exports = {
 			interop(id) {
 				switch (id) {
 					case 'external1':
-					case 'external2':
+					case 'external2': {
 						return 'auto';
-					case 'external3':
+					}
+					case 'external3': {
 						return 'default';
-					case 'external4':
+					}
+					case 'external4': {
 						return 'defaultOnly';
-					default:
+					}
+					default: {
 						throw new Error(`Unexpected require "${id}"`);
+					}
 				}
 			}
 		}
 	},
 	context: {
-		require: () => {
-			return Object.defineProperty({ foo: 'foo', default: 'bar' }, '__esModule', { value: true });
-		}
+		require: () =>
+			Object.defineProperty({ foo: 'foo', default: 'bar' }, '__esModule', { value: true })
 	}
-};
+});

@@ -1,10 +1,10 @@
-const assert = require('assert');
+const assert = require('node:assert');
 const MagicString = require('magic-string');
 const { SourceMapConsumer } = require('source-map');
 const terser = require('terser');
 const getLocation = require('../../getLocation');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'names are recovered if transforms are used',
 	options: {
 		plugins: [
@@ -59,4 +59,4 @@ module.exports = {
 			name: 'mangleMe'
 		});
 	}
-};
+});

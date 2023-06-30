@@ -1,8 +1,8 @@
-const assert = require('assert');
+const assert = require('node:assert');
 
 let referenceId;
 
-module.exports = {
+module.exports = defineTest({
 	description: 'handles implicit dependencies where the dependant is inlined into the same chunk',
 	expectedWarnings: ['CIRCULAR_DEPENDENCY'],
 	options: {
@@ -20,4 +20,4 @@ module.exports = {
 			}
 		}
 	}
-};
+});

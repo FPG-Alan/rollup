@@ -1,9 +1,9 @@
-const assert = require('assert');
-const path = require('path');
+const assert = require('node:assert');
+const path = require('node:path');
 
 const ID_MAIN = path.join(__dirname, 'main.js');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'normalizes both relative and absolute external paths when set to true',
 	options: {
 		makeAbsoluteExternalsRelative: true,
@@ -21,7 +21,9 @@ module.exports = {
 				return true;
 		},
 		plugins: {
+			name: 'test',
 			async buildStart() {
+				// eslint-disable-next-line unicorn/consistent-function-scoping
 				const testExternal = async (source, expected) =>
 					assert.deepStrictEqual((await this.resolve(source, ID_MAIN)).external, expected, source);
 
@@ -49,4 +51,4 @@ module.exports = {
 			}
 		}
 	}
-};
+});

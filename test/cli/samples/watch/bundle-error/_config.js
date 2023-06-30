@@ -1,12 +1,12 @@
-const { unlinkSync, writeFileSync } = require('fs');
-const path = require('path');
+const { unlinkSync, writeFileSync } = require('node:fs');
+const path = require('node:path');
 const { atomicWriteFileSync } = require('../../../../utils');
 
 let mainFile;
 
-module.exports = {
+module.exports = defineTest({
 	description: 'recovers from errors during bundling',
-	command: 'rollup -cw',
+	command: 'rollup -cw --bundleConfigAsCjs',
 	before() {
 		mainFile = path.resolve(__dirname, 'main.js');
 		writeFileSync(mainFile, '<=>');
@@ -16,7 +16,7 @@ module.exports = {
 		setTimeout(() => unlinkSync(mainFile), 300);
 	},
 	abortOnStderr(data) {
-		if (data.includes('Error: Unexpected token')) {
+		if (data.includes('[!] RollupError: Unexpected token')) {
 			setTimeout(() => atomicWriteFileSync(mainFile, 'export default 42;'), 500);
 			return false;
 		}
@@ -24,4 +24,4 @@ module.exports = {
 			return true;
 		}
 	}
-};
+});

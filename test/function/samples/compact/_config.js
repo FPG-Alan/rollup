@@ -1,17 +1,19 @@
-module.exports = {
+const path = require('node:path');
+const ID_MAIN = path.join(__dirname, 'main.js');
+
+module.exports = defineTest({
 	description: 'compact output with compact: true',
 	options: {
 		external: ['external'],
 		output: {
 			compact: true,
-			namespaceToStringTag: true
+			generatedCode: { symbols: true }
 		}
 	},
 	warnings: [
 		{
 			code: 'CIRCULAR_DEPENDENCY',
-			cycle: ['main.js', 'main.js'],
-			importer: 'main.js',
+			ids: [ID_MAIN, ID_MAIN],
 			message: 'Circular dependency: main.js -> main.js'
 		}
 	],
@@ -20,4 +22,4 @@ module.exports = {
 			return 42;
 		}
 	}
-};
+});

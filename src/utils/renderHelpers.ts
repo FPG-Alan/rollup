@@ -13,8 +13,9 @@ export interface RenderOptions {
 	freeze: boolean;
 	indent: string;
 	namespaceToStringTag: boolean;
-	outputPluginDriver: PluginDriver;
+	pluginDriver: PluginDriver;
 	snippets: GenerateCodeSnippets;
+	useOriginalName: ((variable: Variable) => boolean) | null;
 }
 
 export interface NodeRenderOptions {
@@ -69,7 +70,7 @@ export function findNonWhiteSpace(code: string, index: number): number {
 
 // This assumes "code" only contains white-space and comments
 // Returns position of line-comment if applicable
-function findFirstLineBreakOutsideComment(code: string): [number, number] {
+export function findFirstLineBreakOutsideComment(code: string): [number, number] {
 	let lineBreakPos,
 		charCodeAfterSlash,
 		start = 0;
@@ -146,11 +147,10 @@ export function getCommaSeparatedNodesWithBoundaries<N extends Node>(
 	start: number;
 }[] {
 	const splitUpNodes = [];
-	let node, nextNode, nextNodeStart, contentEnd, char;
+	let node, nextNodeStart, contentEnd, char;
 	let separator = start - 1;
 
-	for (let nextIndex = 0; nextIndex < nodes.length; nextIndex++) {
-		nextNode = nodes[nextIndex];
+	for (const nextNode of nodes) {
 		if (node !== undefined) {
 			separator =
 				node.end +

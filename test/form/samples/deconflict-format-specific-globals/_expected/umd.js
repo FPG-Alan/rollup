@@ -4,11 +4,11 @@
 	(global = typeof globalThis !== 'undefined' ? globalThis : global || self, global.bundle = factory(global.external));
 })(this, (function (external) { 'use strict';
 
-	function _interopDefaultLegacy (e) { return e && typeof e === 'object' && 'default' in e ? e : { 'default': e }; }
+	function _interopDefault (e) { return e && e.__esModule ? e : { default: e }; }
 
-	var external__default = /*#__PURE__*/_interopDefaultLegacy(external);
+	var external__default = /*#__PURE__*/_interopDefault(external);
 
-	console.log(external__default["default"]);
+	console.log(external__default.default);
 
 	const _interopDefault$1 = 1;
 	const _interopNamespace$1 = 1;
@@ -20,8 +20,8 @@
 	console.log(_interopDefault$1, _interopNamespace$1, module, require$1, exports$1, document$1, URL$1);
 
 	import('external').then(console.log);
-	exports["default"] = 0;
-	console.log((typeof document === 'undefined' && typeof location === 'undefined' ? new (require('u' + 'rl').URL)('file:' + __filename).href : typeof document === 'undefined' ? location.href : (document.currentScript && document.currentScript.src || new URL('umd.js', document.baseURI).href)));
+	exports.default = 0;
+	console.log((typeof document === 'undefined' && typeof location === 'undefined' ? require('u' + 'rl').pathToFileURL(__filename).href : typeof document === 'undefined' ? location.href : (document.currentScript && document.currentScript.src || new URL('umd.js', document.baseURI).href)));
 
 	function nested1() {
 		const _interopDefault = 1;
@@ -34,8 +34,8 @@
 		console.log(_interopDefault, _interopNamespace, module, require$1, exports$1, document$1, URL$1);
 
 		import('external').then(console.log);
-		exports["default"] = 1;
-		console.log((typeof document === 'undefined' && typeof location === 'undefined' ? new (require('u' + 'rl').URL)('file:' + __filename).href : typeof document === 'undefined' ? location.href : (document.currentScript && document.currentScript.src || new URL('umd.js', document.baseURI).href)));
+		exports.default = 1;
+		console.log((typeof document === 'undefined' && typeof location === 'undefined' ? require('u' + 'rl').pathToFileURL(__filename).href : typeof document === 'undefined' ? location.href : (document.currentScript && document.currentScript.src || new URL('umd.js', document.baseURI).href)));
 	}
 
 	nested1();
@@ -53,6 +53,6 @@
 
 	nested2();
 
-	return exports["default"];
+	return exports.default;
 
 }));

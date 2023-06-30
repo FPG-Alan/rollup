@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'throws for invalid file types',
 	options: {
 		plugins: {
@@ -11,8 +11,9 @@ module.exports = {
 	error: {
 		code: 'PLUGIN_ERROR',
 		hook: 'buildStart',
-		message: 'Emitted files must be of type "asset" or "chunk", received "unknown".',
+		message:
+			'Emitted files must be of type "asset", "chunk" or "prebuilt-chunk", received "unknown".',
 		plugin: 'test-plugin',
 		pluginCode: 'VALIDATION_ERROR'
 	}
-};
+});

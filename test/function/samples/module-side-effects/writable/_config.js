@@ -1,12 +1,9 @@
-const assert = require('assert');
-const path = require('assert');
-
 // We prefix the polyfill with \0 to tell other plugins not to try to load or
 // transform it
 const POLYFILL_ID = '\0polyfill';
 const PROXY_SUFFIX = '?inject-polyfill-proxy';
 
-module.exports = {
+module.exports = defineTest({
 	description: 'ModuleInfo.moduleSideEffects should be writable during build time',
 	options: {
 		treeshake: { moduleSideEffects: false },
@@ -69,4 +66,4 @@ module.exports = {
 			}
 		]
 	}
-};
+});

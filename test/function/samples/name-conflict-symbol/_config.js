@@ -1,14 +1,14 @@
-const assert = require('assert');
+const assert = require('node:assert');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'avoids name conflicts with local variables named Symbol',
 	options: {
 		output: {
-			namespaceToStringTag: true
+			generatedCode: { symbols: true }
 		}
 	},
 	exports(exports) {
 		assert.strictEqual(exports.Symbol, null);
 		assert.strictEqual(exports.toString(), '[object Module]');
 	}
-};
+});

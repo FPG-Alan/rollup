@@ -1,14 +1,14 @@
-const { unlinkSync, writeFileSync } = require('fs');
-const path = require('path');
+const { unlinkSync, writeFileSync } = require('node:fs');
+const path = require('node:path');
 const { atomicWriteFileSync } = require('../../../../utils');
 
 let configFile;
 
-module.exports = {
+module.exports = defineTest({
 	description: 'keeps watching the config file in case the config is changed to an invalid state',
 	command: 'rollup -cw',
 	before() {
-		configFile = path.resolve(__dirname, 'rollup.config.js');
+		configFile = path.resolve(__dirname, 'rollup.config.mjs');
 		writeFileSync(
 			configFile,
 			`
@@ -26,7 +26,7 @@ module.exports = {
 		setTimeout(() => unlinkSync(configFile), 300);
 	},
 	abortOnStderr(data) {
-		if (data.includes(`created _actual${path.sep}main1.js`)) {
+		if (data.includes(`created _actual/main1.js`)) {
 			setTimeout(
 				() => atomicWriteFileSync(configFile, 'throw new Error("Config contains errors");'),
 				600
@@ -48,8 +48,8 @@ module.exports = {
 			}, 600);
 			return false;
 		}
-		if (data.includes(`created _actual${path.sep}main2.js`)) {
+		if (data.includes(`created _actual/main2.js`)) {
 			return true;
 		}
 	}
-};
+});

@@ -1,8 +1,9 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'external modules can not have syntheticNamedExports',
 	options: {
 		plugins: [
 			{
+				name: 'test-plugin',
 				resolveId(id) {
 					if (id === 'dep') {
 						return {
@@ -18,9 +19,8 @@ module.exports = {
 	warnings: [
 		{
 			code: 'EXTERNAL_SYNTHETIC_EXPORTS',
-			importer: 'main.js',
-			source: 'dep',
-			message: "External 'dep' can not have 'syntheticNamedExports' enabled."
+			exporter: 'dep',
+			message: 'External "dep" cannot have "syntheticNamedExports" enabled (imported by "main.js").'
 		}
 	],
 	context: {
@@ -28,4 +28,4 @@ module.exports = {
 			return 1;
 		}
 	}
-};
+});

@@ -1,8 +1,9 @@
-const assert = require('assert');
-const path = require('path');
+const assert = require('node:assert');
+const path = require('node:path');
+// @ts-expect-error not included in types
 const { getObject } = require('../../../../utils');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'associates empty modules with chunks if tree-shaking is disabled for them',
 	options: {
 		strictDeprecations: false,
@@ -35,7 +36,7 @@ module.exports = {
 			generateBundle(options, bundle) {
 				assert.deepStrictEqual(
 					getObject(
-						Array.from(this.getModuleIds(), id => [
+						[...this.getModuleIds()].map(id => [
 							id.startsWith('empty') ? id : path.relative(__dirname, id),
 							this.getModuleInfo(id).hasModuleSideEffects
 						])
@@ -64,5 +65,6 @@ module.exports = {
 				);
 			}
 		}
-	}
-};
+	},
+	expectedWarnings: ['DEPRECATED_FEATURE']
+});

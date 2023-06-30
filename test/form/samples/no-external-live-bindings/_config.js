@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'Allows omitting the code that handles external live bindings',
 	options: {
 		external: () => true,
@@ -8,7 +8,8 @@ module.exports = {
 				external2: 'external2'
 			},
 			externalLiveBindings: false,
-			name: 'bundle'
+			name: 'bundle',
+			dynamicImportInCjs: false
 		}
 	}
-};
+});

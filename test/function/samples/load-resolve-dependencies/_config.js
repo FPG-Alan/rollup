@@ -1,20 +1,21 @@
-const assert = require('assert');
-const path = require('path');
+const assert = require('node:assert');
+const path = require('node:path');
+const ID_FIRST = path.join(__dirname, 'first.js');
+const ID_SECOND = path.join(__dirname, 'second.js');
+const ID_THIRD = path.join(__dirname, 'third.js');
 const DYNAMIC_IMPORT_PROXY_PREFIX = '\0dynamic-import:';
 const chunks = [];
 
-module.exports = {
+module.exports = defineTest({
 	description: 'allows to wait for dependency resolution in this.load to scan dependency trees',
 	context: { chunks },
 	async exports(exports) {
 		assert.deepStrictEqual(chunks, []);
 		const { importSecond } = await exports.importFirst();
-		const expectedFirstChunk = ['first.js', 'second.js', 'third.js'].map(name =>
-			path.join(__dirname, name)
-		);
+		const expectedFirstChunk = [ID_FIRST, ID_SECOND, ID_THIRD];
 		assert.deepStrictEqual(chunks, [expectedFirstChunk]);
 		await importSecond();
-		const expectedSecondChunk = ['second.js', 'third.js'].map(name => path.join(__dirname, name));
+		const expectedSecondChunk = [ID_SECOND, ID_THIRD];
 		assert.deepStrictEqual(chunks, [expectedFirstChunk, expectedSecondChunk]);
 	},
 	options: {
@@ -85,9 +86,8 @@ module.exports = {
 	warnings: [
 		{
 			code: 'CIRCULAR_DEPENDENCY',
-			cycle: ['second.js', 'third.js', 'second.js'],
-			importer: 'second.js',
+			ids: [ID_SECOND, ID_THIRD, ID_SECOND],
 			message: 'Circular dependency: second.js -> third.js -> second.js'
 		}
 	]
-};
+});

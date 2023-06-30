@@ -1,15 +1,18 @@
-import { type CallOptions, NO_ARGS } from '../../CallOptions';
-import type { HasEffectsContext, InclusionContext } from '../../ExecutionContext';
-import { EVENT_CALLED, type NodeEvent } from '../../NodeEvents';
+import type { HasEffectsContext } from '../../ExecutionContext';
+import type { NodeInteraction, NodeInteractionCalled } from '../../NodeInteractions';
+import {
+	INTERACTION_ACCESSED,
+	INTERACTION_CALLED,
+	NODE_INTERACTION_UNKNOWN_ASSIGNMENT,
+	NODE_INTERACTION_UNKNOWN_CALL
+} from '../../NodeInteractions';
 import { EMPTY_PATH, type ObjectPath, UNKNOWN_INTEGER_PATH } from '../../utils/PathTracker';
 import {
 	UNKNOWN_LITERAL_BOOLEAN,
 	UNKNOWN_LITERAL_NUMBER,
 	UNKNOWN_LITERAL_STRING
 } from '../../values';
-import type SpreadElement from '../SpreadElement';
-import { ExpressionEntity, UNKNOWN_EXPRESSION } from './Expression';
-import type { ExpressionNode } from './Node';
+import { ExpressionEntity, UNKNOWN_EXPRESSION, UNKNOWN_RETURN_EXPRESSION } from './Expression';
 
 type MethodDescription = {
 	callsArgs: number[] | null;
@@ -30,79 +33,64 @@ export class Method extends ExpressionEntity {
 		super();
 	}
 
-	deoptimizeThisOnEventAtPath(
-		event: NodeEvent,
-		path: ObjectPath,
-		thisParameter: ExpressionEntity
-	): void {
-		if (event === EVENT_CALLED && path.length === 0 && this.description.mutatesSelfAsArray) {
-			thisParameter.deoptimizePath(UNKNOWN_INTEGER_PATH);
+	deoptimizeArgumentsOnInteractionAtPath({ args, type }: NodeInteraction, path: ObjectPath): void {
+		if (type === INTERACTION_CALLED && path.length === 0 && this.description.mutatesSelfAsArray) {
+			args[0]?.deoptimizePath(UNKNOWN_INTEGER_PATH);
 		}
 	}
 
 	getReturnExpressionWhenCalledAtPath(
 		path: ObjectPath,
-		callOptions: CallOptions
-	): ExpressionEntity {
+		{ args }: NodeInteractionCalled
+	): [expression: ExpressionEntity, isPure: boolean] {
 		if (path.length > 0) {
-			return UNKNOWN_EXPRESSION;
+			return UNKNOWN_RETURN_EXPRESSION;
 		}
-		return (
+		return [
 			this.description.returnsPrimitive ||
-			(this.description.returns === 'self'
-				? callOptions.thisParam || UNKNOWN_EXPRESSION
-				: this.description.returns())
-		);
+				(this.description.returns === 'self'
+					? args[0] || UNKNOWN_EXPRESSION
+					: this.description.returns()),
+			false
+		];
 	}
 
-	hasEffectsWhenAccessedAtPath(path: ObjectPath): boolean {
-		return path.length > 1;
-	}
-
-	hasEffectsWhenAssignedAtPath(path: ObjectPath): boolean {
-		return path.length > 0;
-	}
-
-	hasEffectsWhenCalledAtPath(
+	hasEffectsOnInteractionAtPath(
 		path: ObjectPath,
-		callOptions: CallOptions,
+		interaction: NodeInteraction,
 		context: HasEffectsContext
 	): boolean {
-		if (
-			path.length > 0 ||
-			(this.description.mutatesSelfAsArray === true &&
-				callOptions.thisParam?.hasEffectsWhenAssignedAtPath(UNKNOWN_INTEGER_PATH, context))
-		) {
+		const { type } = interaction;
+		if (path.length > (type === INTERACTION_ACCESSED ? 1 : 0)) {
 			return true;
 		}
-		if (!this.description.callsArgs) {
-			return false;
-		}
-		for (const argIndex of this.description.callsArgs) {
+		if (type === INTERACTION_CALLED) {
+			const { args } = interaction;
 			if (
-				callOptions.args[argIndex]?.hasEffectsWhenCalledAtPath(
-					EMPTY_PATH,
-					{
-						args: NO_ARGS,
-						thisParam: null,
-						withNew: false
-					},
+				this.description.mutatesSelfAsArray === true &&
+				args[0]?.hasEffectsOnInteractionAtPath(
+					UNKNOWN_INTEGER_PATH,
+					NODE_INTERACTION_UNKNOWN_ASSIGNMENT,
 					context
 				)
 			) {
 				return true;
 			}
+			if (this.description.callsArgs) {
+				for (const argumentIndex of this.description.callsArgs) {
+					if (
+						args[argumentIndex + 1]?.hasEffectsOnInteractionAtPath(
+							EMPTY_PATH,
+							NODE_INTERACTION_UNKNOWN_CALL,
+							context
+						)
+					) {
+						return true;
+					}
+				}
+			}
 		}
 		return false;
-	}
-
-	includeCallArguments(
-		context: InclusionContext,
-		args: readonly (ExpressionNode | SpreadElement)[]
-	): void {
-		for (const arg of args) {
-			arg.include(context, false);
-		}
 	}
 }
 

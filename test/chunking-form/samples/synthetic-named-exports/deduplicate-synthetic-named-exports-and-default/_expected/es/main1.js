@@ -1,7 +1,4 @@
-import { l as lib } from './generated-lib.js';
-export { l as lib } from './generated-lib.js';
-
-
+var lib = { foo: true, bar: true, baz: true };
 
 var foo = lib.foo;
-export { foo };
+export { foo, lib };

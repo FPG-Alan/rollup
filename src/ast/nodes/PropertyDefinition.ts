@@ -1,14 +1,13 @@
-import type { CallOptions } from '../CallOptions';
 import type { DeoptimizableEntity } from '../DeoptimizableEntity';
 import type { HasEffectsContext } from '../ExecutionContext';
-import type { NodeEvent } from '../NodeEvents';
+import type { NodeInteraction, NodeInteractionCalled } from '../NodeInteractions';
 import type { ObjectPath, PathTracker } from '../utils/PathTracker';
 import type * as NodeType from './NodeType';
 import type PrivateIdentifier from './PrivateIdentifier';
 import {
 	type ExpressionEntity,
 	type LiteralValueOrUnknown,
-	UNKNOWN_EXPRESSION,
+	UNKNOWN_RETURN_EXPRESSION,
 	UnknownValue
 } from './shared/Expression';
 import { type ExpressionNode, NodeBase } from './shared/Node';
@@ -20,17 +19,16 @@ export default class PropertyDefinition extends NodeBase {
 	declare type: NodeType.tPropertyDefinition;
 	declare value: ExpressionNode | null;
 
-	deoptimizePath(path: ObjectPath): void {
-		this.value?.deoptimizePath(path);
-	}
-
-	deoptimizeThisOnEventAtPath(
-		event: NodeEvent,
+	deoptimizeArgumentsOnInteractionAtPath(
+		interaction: NodeInteraction,
 		path: ObjectPath,
-		thisParameter: ExpressionEntity,
 		recursionTracker: PathTracker
 	): void {
-		this.value?.deoptimizeThisOnEventAtPath(event, path, thisParameter, recursionTracker);
+		this.value?.deoptimizeArgumentsOnInteractionAtPath(interaction, path, recursionTracker);
+	}
+
+	deoptimizePath(path: ObjectPath): void {
+		this.value?.deoptimizePath(path);
 	}
 
 	getLiteralValueAtPath(
@@ -45,35 +43,26 @@ export default class PropertyDefinition extends NodeBase {
 
 	getReturnExpressionWhenCalledAtPath(
 		path: ObjectPath,
-		callOptions: CallOptions,
+		interaction: NodeInteractionCalled,
 		recursionTracker: PathTracker,
 		origin: DeoptimizableEntity
-	): ExpressionEntity {
+	): [expression: ExpressionEntity, isPure: boolean] {
 		return this.value
-			? this.value.getReturnExpressionWhenCalledAtPath(path, callOptions, recursionTracker, origin)
-			: UNKNOWN_EXPRESSION;
+			? this.value.getReturnExpressionWhenCalledAtPath(path, interaction, recursionTracker, origin)
+			: UNKNOWN_RETURN_EXPRESSION;
 	}
 
 	hasEffects(context: HasEffectsContext): boolean {
-		return (
-			this.key.hasEffects(context) ||
-			(this.static && this.value !== null && this.value.hasEffects(context))
-		);
+		return this.key.hasEffects(context) || (this.static && !!this.value?.hasEffects(context));
 	}
 
-	hasEffectsWhenAccessedAtPath(path: ObjectPath, context: HasEffectsContext): boolean {
-		return !this.value || this.value.hasEffectsWhenAccessedAtPath(path, context);
-	}
-
-	hasEffectsWhenAssignedAtPath(path: ObjectPath, context: HasEffectsContext): boolean {
-		return !this.value || this.value.hasEffectsWhenAssignedAtPath(path, context);
-	}
-
-	hasEffectsWhenCalledAtPath(
+	hasEffectsOnInteractionAtPath(
 		path: ObjectPath,
-		callOptions: CallOptions,
+		interaction: NodeInteraction,
 		context: HasEffectsContext
 	): boolean {
-		return !this.value || this.value.hasEffectsWhenCalledAtPath(path, callOptions, context);
+		return !this.value || this.value.hasEffectsOnInteractionAtPath(path, interaction, context);
 	}
+
+	protected applyDeoptimizations() {}
 }

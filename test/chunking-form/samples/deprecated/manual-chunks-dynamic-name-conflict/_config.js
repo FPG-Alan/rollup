@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'handles name conflicts in manual chunks',
 	options: {
 		strictDeprecations: false,
@@ -6,5 +6,6 @@ module.exports = {
 		manualChunks: {
 			dynamic: ['dynamic1.js']
 		}
-	}
-};
+	},
+	expectedWarnings: ['DEPRECATED_FEATURE']
+});

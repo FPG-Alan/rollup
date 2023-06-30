@@ -1,8 +1,8 @@
-const assert = require('assert');
-const path = require('path');
+const assert = require('node:assert');
+const path = require('node:path');
 const sideEffects = [];
 
-module.exports = {
+module.exports = defineTest({
 	description: 'handles setting moduleSideEffects in the load hook',
 	context: {
 		sideEffects
@@ -41,4 +41,4 @@ module.exports = {
 			}
 		}
 	}
-};
+});

@@ -1,10 +1,6 @@
 'use strict';
 
-Object.defineProperty(exports, '__esModule', { value: true });
+var lib = { foo: true, bar: true, baz: true };
 
-var lib = require('./generated-lib.js');
-
-
-
-exports.lib = lib.lib;
-exports.foo = lib.lib.foo;
+exports.foo = lib.foo;
+exports.lib = lib;

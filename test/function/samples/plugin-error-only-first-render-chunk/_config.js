@@ -1,17 +1,17 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'throws error only with first plugin renderChunk',
 	options: {
 		plugins: [
 			{
 				name: 'plugin1',
 				renderChunk() {
-					throw Error('Something happened 1');
+					throw new Error('Something happened 1');
 				}
 			},
 			{
 				name: 'plugin2',
 				renderChunk() {
-					throw Error('Something happened 2');
+					throw new Error('Something happened 2');
 				}
 			}
 		]
@@ -22,4 +22,4 @@ module.exports = {
 		hook: 'renderChunk',
 		message: `Something happened 1`
 	}
-};
+});

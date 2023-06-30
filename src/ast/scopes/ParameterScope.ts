@@ -2,17 +2,17 @@ import type { AstContext } from '../../Module';
 import type { InclusionContext } from '../ExecutionContext';
 import type Identifier from '../nodes/Identifier';
 import SpreadElement from '../nodes/SpreadElement';
-import { UNKNOWN_EXPRESSION } from '../nodes/shared/Expression';
-import type { ExpressionNode } from '../nodes/shared/Node';
-import LocalVariable from '../variables/LocalVariable';
+import type { ExpressionEntity } from '../nodes/shared/Expression';
+import type LocalVariable from '../variables/LocalVariable';
+import ParameterVariable from '../variables/ParameterVariable';
 import ChildScope from './ChildScope';
 import type Scope from './Scope';
 
 export default class ParameterScope extends ChildScope {
 	readonly hoistedBodyVarScope: ChildScope;
+	parameters: readonly ParameterVariable[][] = [];
 
-	protected parameters: readonly LocalVariable[][] = [];
-	private context: AstContext;
+	private readonly context: AstContext;
 	private hasRest = false;
 
 	constructor(parent: Scope, context: AstContext) {
@@ -23,21 +23,21 @@ export default class ParameterScope extends ChildScope {
 
 	/**
 	 * Adds a parameter to this scope. Parameters must be added in the correct
-	 * order, e.g. from left to right.
+	 * order, i.e. from left to right.
 	 */
-	addParameterDeclaration(identifier: Identifier): LocalVariable {
-		const name = identifier.name;
-		let variable = this.hoistedBodyVarScope.variables.get(name) as LocalVariable;
-		if (variable) {
-			variable.addDeclaration(identifier, null);
-		} else {
-			variable = new LocalVariable(name, identifier, UNKNOWN_EXPRESSION, this.context);
+	addParameterDeclaration(identifier: Identifier): ParameterVariable {
+		const { name } = identifier;
+		const variable = new ParameterVariable(name, identifier, this.context);
+		const localVariable = this.hoistedBodyVarScope.variables.get(name) as LocalVariable;
+		if (localVariable) {
+			this.hoistedBodyVarScope.variables.set(name, variable);
+			variable.mergeDeclarations(localVariable);
 		}
 		this.variables.set(name, variable);
 		return variable;
 	}
 
-	addParameterVariables(parameters: LocalVariable[][], hasRest: boolean): void {
+	addParameterVariables(parameters: ParameterVariable[][], hasRest: boolean): void {
 		this.parameters = parameters;
 		for (const parameterList of parameters) {
 			for (const parameter of parameterList) {
@@ -49,31 +49,31 @@ export default class ParameterScope extends ChildScope {
 
 	includeCallArguments(
 		context: InclusionContext,
-		args: readonly (ExpressionNode | SpreadElement)[]
+		parameters: readonly (ExpressionEntity | SpreadElement)[]
 	): void {
 		let calledFromTryStatement = false;
-		let argIncluded = false;
-		const restParam = this.hasRest && this.parameters[this.parameters.length - 1];
-		for (const checkedArg of args) {
-			if (checkedArg instanceof SpreadElement) {
-				for (const arg of args) {
-					arg.include(context, false);
+		let argumentIncluded = false;
+		const restParameter = this.hasRest && this.parameters[this.parameters.length - 1];
+		for (const checkedArgument of parameters) {
+			if (checkedArgument instanceof SpreadElement) {
+				for (const argument of parameters) {
+					argument.include(context, false);
 				}
 				break;
 			}
 		}
-		for (let index = args.length - 1; index >= 0; index--) {
-			const paramVars = this.parameters[index] || restParam;
-			const arg = args[index];
-			if (paramVars) {
+		for (let index = parameters.length - 1; index >= 0; index--) {
+			const parameterVariables = this.parameters[index] || restParameter;
+			const argument = parameters[index];
+			if (parameterVariables) {
 				calledFromTryStatement = false;
-				if (paramVars.length === 0) {
+				if (parameterVariables.length === 0) {
 					// handle empty destructuring
-					argIncluded = true;
+					argumentIncluded = true;
 				} else {
-					for (const variable of paramVars) {
+					for (const variable of parameterVariables) {
 						if (variable.included) {
-							argIncluded = true;
+							argumentIncluded = true;
 						}
 						if (variable.calledFromTryStatement) {
 							calledFromTryStatement = true;
@@ -81,11 +81,11 @@ export default class ParameterScope extends ChildScope {
 					}
 				}
 			}
-			if (!argIncluded && arg.shouldBeIncluded(context)) {
-				argIncluded = true;
+			if (!argumentIncluded && argument.shouldBeIncluded(context)) {
+				argumentIncluded = true;
 			}
-			if (argIncluded) {
-				arg.include(context, calledFromTryStatement);
+			if (argumentIncluded) {
+				argument.include(context, calledFromTryStatement);
 			}
 		}
 	}

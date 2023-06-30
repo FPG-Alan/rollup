@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'manual chunks can have other manual chunks as dependencies',
 	options: {
 		strictDeprecations: false,
@@ -8,5 +8,6 @@ module.exports = {
 			'manual-inner': ['inner.js'],
 			'manual-middle': ['middle.js']
 		}
-	}
-};
+	},
+	expectedWarnings: ['DEPRECATED_FEATURE']
+});

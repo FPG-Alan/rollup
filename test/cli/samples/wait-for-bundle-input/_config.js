@@ -1,10 +1,10 @@
-const { unlinkSync } = require('fs');
-const path = require('path');
+const { unlinkSync } = require('node:fs');
+const path = require('node:path');
 const { atomicWriteFileSync } = require('../../../utils');
 
 let mainFile;
 
-module.exports = {
+module.exports = defineTest({
 	description: 'waits for bundle input',
 	command: 'rollup -c --waitForBundleInput',
 	before() {
@@ -21,4 +21,4 @@ module.exports = {
 		// We wait for a regular abort as we do not watch
 		return false;
 	}
-};
+});

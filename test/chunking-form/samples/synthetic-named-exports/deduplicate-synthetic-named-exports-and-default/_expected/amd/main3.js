@@ -1,9 +1,7 @@
-define(['exports', './generated-lib'], (function (exports, lib) { 'use strict';
+define(['exports', './main1'], (function (exports, main1) { 'use strict';
 
 
 
-	exports.foo = lib.lib.foo;
-
-	Object.defineProperty(exports, '__esModule', { value: true });
+	exports.foo = main1.lib.foo;
 
 }));

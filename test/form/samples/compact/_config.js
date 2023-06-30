@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'supports compact output with compact: true',
 	expectedWarnings: ['CIRCULAR_DEPENDENCY'],
 	options: {
@@ -6,10 +6,10 @@ module.exports = {
 		output: {
 			name: 'foo',
 			compact: true,
-			namespaceToStringTag: true,
+			generatedCode: { symbols: true },
 			globals: {
 				external: 'x'
 			}
 		}
 	}
-};
+});

@@ -1,10 +1,10 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'adds Symbol.toStringTag property to entry chunks with named exports',
 	options: {
 		output: {
-			namespaceToStringTag: true,
+			generatedCode: { symbols: true },
 			exports: 'named',
 			name: 'bundle'
 		}
 	}
-};
+});

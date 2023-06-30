@@ -1,13 +1,13 @@
 const { assertIncludes } = require('../../../utils.js');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'warns when eval is used multiple times',
 	command: 'rollup -c',
 	stderr: stderr =>
 		assertIncludes(
 			stderr,
 			'(!) Use of eval is strongly discouraged\n' +
-				'https://rollupjs.org/guide/en/#avoiding-eval\n' +
+				'https://rollupjs.org/troubleshooting/#avoiding-eval\n' +
 				'dep1.js\n' +
 				'1: eval(\'console.log("Hello");\');\n' +
 				'   ^\n' +
@@ -25,4 +25,4 @@ module.exports = {
 				'\n' +
 				'...and 3 other files'
 		)
-};
+});

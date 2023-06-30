@@ -1,10 +1,10 @@
-const assert = require('assert');
-const { readFileSync } = require('fs');
+const assert = require('node:assert');
+const { readFileSync } = require('node:fs');
 const buble = require('buble');
 const { SourceMapConsumer } = require('source-map');
 const getLocation = require('../../getLocation');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'preserves sourcemap chains when transforming',
 	options: {
 		plugins: [
@@ -16,7 +16,7 @@ module.exports = {
 						id = id.replace(/bar.js$/, 'foo.js');
 					}
 
-					const code = readFileSync(id, 'utf-8');
+					const code = readFileSync(id, 'utf8');
 
 					const out = buble.transform(code, {
 						transforms: { modules: false },
@@ -62,4 +62,4 @@ module.exports = {
 		assert.equal(originalLoc.line, 4);
 		assert.equal(originalLoc.column, 19);
 	}
-};
+});

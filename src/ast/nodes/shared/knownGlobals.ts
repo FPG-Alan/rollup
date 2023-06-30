@@ -1,11 +1,25 @@
 /* eslint sort-keys: "off" */
 
+import { doNothing } from '../../../utils/doNothing';
+import type { HasEffectsContext } from '../../ExecutionContext';
+import type { NodeInteractionCalled } from '../../NodeInteractions';
+import { NODE_INTERACTION_UNKNOWN_ASSIGNMENT } from '../../NodeInteractions';
 import type { ObjectPath } from '../../utils/PathTracker';
+import {
+	SymbolToStringTag,
+	UNKNOWN_NON_ACCESSOR_PATH,
+	UNKNOWN_PATH
+} from '../../utils/PathTracker';
+import ArrayExpression from '../ArrayExpression';
+import type { LiteralValueOrUnknown } from './Expression';
+import { UnknownTruthyValue } from './Expression';
 
 const ValueProperties = Symbol('Value Properties');
 
 interface ValueDescription {
-	pure: boolean;
+	deoptimizeArgumentsOnCall(interaction: NodeInteractionCalled): void;
+	getLiteralValue(): LiteralValueOrUnknown;
+	hasEffectsWhenCalled(interaction: NodeInteractionCalled, context: HasEffectsContext): boolean;
 }
 
 interface GlobalDescription {
@@ -14,8 +28,29 @@ interface GlobalDescription {
 	__proto__: null;
 }
 
-const PURE: ValueDescription = { pure: true };
-const IMPURE: ValueDescription = { pure: false };
+const getTruthyLiteralValue = (): LiteralValueOrUnknown => UnknownTruthyValue;
+const returnFalse = () => false;
+const returnTrue = () => true;
+
+const PURE: ValueDescription = {
+	deoptimizeArgumentsOnCall: doNothing,
+	getLiteralValue: getTruthyLiteralValue,
+	hasEffectsWhenCalled: returnFalse
+};
+
+const IMPURE: ValueDescription = {
+	deoptimizeArgumentsOnCall: doNothing,
+	getLiteralValue: getTruthyLiteralValue,
+	hasEffectsWhenCalled: returnTrue
+};
+
+const PURE_WITH_ARRAY: ValueDescription = {
+	deoptimizeArgumentsOnCall: doNothing,
+	getLiteralValue: getTruthyLiteralValue,
+	hasEffectsWhenCalled({ args }) {
+		return args.length > 1 && !(args[1] instanceof ArrayExpression);
+	}
+};
 
 // We use shortened variables to reduce file size here
 /* OBJECT */
@@ -28,6 +63,27 @@ const O: GlobalDescription = {
 const PF: GlobalDescription = {
 	__proto__: null,
 	[ValueProperties]: PURE
+};
+
+/* FUNCTION THAT MUTATES FIRST ARG WITHOUT TRIGGERING ACCESSORS */
+const MUTATES_ARG_WITHOUT_ACCESSOR: GlobalDescription = {
+	__proto__: null,
+	[ValueProperties]: {
+		deoptimizeArgumentsOnCall({ args: [, firstArgument] }: NodeInteractionCalled) {
+			firstArgument?.deoptimizePath(UNKNOWN_PATH);
+		},
+		getLiteralValue: getTruthyLiteralValue,
+		hasEffectsWhenCalled({ args }, context) {
+			return (
+				args.length <= 1 ||
+				args[1].hasEffectsOnInteractionAtPath(
+					UNKNOWN_NON_ACCESSOR_PATH,
+					NODE_INTERACTION_UNKNOWN_ASSIGNMENT,
+					context
+				)
+			);
+		}
+	}
 };
 
 /* CONSTRUCTOR */
@@ -44,10 +100,16 @@ const PC: GlobalDescription = {
 	prototype: O
 };
 
+const PC_WITH_ARRAY = {
+	__proto__: null,
+	[ValueProperties]: PURE_WITH_ARRAY,
+	prototype: O
+};
+
 const ARRAY_TYPE: GlobalDescription = {
 	__proto__: null,
 	[ValueProperties]: PURE,
-	from: PF,
+	from: O,
 	of: PF,
 	prototype: O
 };
@@ -117,7 +179,7 @@ const knownGlobals: GlobalDescription = {
 	isNaN: PF,
 	isPrototypeOf: O,
 	JSON: O,
-	Map: PC,
+	Map: PC_WITH_ARRAY,
 	Math: {
 		__proto__: null,
 		[ValueProperties]: IMPURE,
@@ -173,15 +235,25 @@ const knownGlobals: GlobalDescription = {
 		__proto__: null,
 		[ValueProperties]: PURE,
 		create: PF,
+		// Technically those can throw in certain situations, but we ignore this as
+		// code that relies on this will hopefully wrap this in a try-catch, which
+		// deoptimizes everything anyway
+		defineProperty: MUTATES_ARG_WITHOUT_ACCESSOR,
+		defineProperties: MUTATES_ARG_WITHOUT_ACCESSOR,
+		freeze: MUTATES_ARG_WITHOUT_ACCESSOR,
 		getOwnPropertyDescriptor: PF,
+		getOwnPropertyDescriptors: PF,
 		getOwnPropertyNames: PF,
 		getOwnPropertySymbols: PF,
 		getPrototypeOf: PF,
+		hasOwn: PF,
 		is: PF,
 		isExtensible: PF,
 		isFrozen: PF,
 		isSealed: PF,
 		keys: PF,
+		fromEntries: O,
+		entries: PF,
 		prototype: O
 	},
 	parseFloat: PF,
@@ -190,6 +262,8 @@ const knownGlobals: GlobalDescription = {
 		__proto__: null,
 		[ValueProperties]: IMPURE,
 		all: O,
+		allSettled: O,
+		any: O,
 		prototype: O,
 		race: O,
 		reject: O,
@@ -201,7 +275,7 @@ const knownGlobals: GlobalDescription = {
 	ReferenceError: PC,
 	Reflect: O,
 	RegExp: PC,
-	Set: PC,
+	Set: PC_WITH_ARRAY,
 	SharedArrayBuffer: C,
 	String: {
 		__proto__: null,
@@ -216,7 +290,17 @@ const knownGlobals: GlobalDescription = {
 		[ValueProperties]: PURE,
 		for: PF,
 		keyFor: PF,
-		prototype: O
+		prototype: O,
+		toStringTag: {
+			__proto__: null,
+			[ValueProperties]: {
+				deoptimizeArgumentsOnCall: doNothing,
+				getLiteralValue() {
+					return SymbolToStringTag;
+				},
+				hasEffectsWhenCalled: returnTrue
+			}
+		}
 	},
 	SyntaxError: PC,
 	toLocaleString: O,
@@ -231,13 +315,36 @@ const knownGlobals: GlobalDescription = {
 	unescape: PF,
 	URIError: PC,
 	valueOf: O,
-	WeakMap: PC,
-	WeakSet: PC,
+	WeakMap: PC_WITH_ARRAY,
+	WeakSet: PC_WITH_ARRAY,
 
 	// Additional globals shared by Node and Browser that are not strictly part of the language
 	clearInterval: C,
 	clearTimeout: C,
-	console: O,
+	console: {
+		__proto__: null,
+		[ValueProperties]: IMPURE,
+		assert: C,
+		clear: C,
+		count: C,
+		countReset: C,
+		debug: C,
+		dir: C,
+		dirxml: C,
+		error: C,
+		exception: C,
+		group: C,
+		groupCollapsed: C,
+		groupEnd: C,
+		info: C,
+		log: C,
+		table: C,
+		time: C,
+		timeEnd: C,
+		timeLog: C,
+		trace: C,
+		warn: C
+	},
 	Intl: {
 		__proto__: null,
 		[ValueProperties]: IMPURE,
@@ -844,7 +951,7 @@ for (const global of ['window', 'global', 'self', 'globalThis']) {
 	knownGlobals[global] = knownGlobals;
 }
 
-function getGlobalAtPath(path: ObjectPath): ValueDescription | null {
+export function getGlobalAtPath(path: ObjectPath): ValueDescription | null {
 	let currentGlobal: GlobalDescription | null = knownGlobals;
 	for (const pathSegment of path) {
 		if (typeof pathSegment !== 'string') {
@@ -856,16 +963,4 @@ function getGlobalAtPath(path: ObjectPath): ValueDescription | null {
 		}
 	}
 	return currentGlobal[ValueProperties];
-}
-
-export function isPureGlobal(path: ObjectPath): boolean {
-	const globalAtPath = getGlobalAtPath(path);
-	return globalAtPath !== null && globalAtPath.pure;
-}
-
-export function isGlobalMember(path: ObjectPath): boolean {
-	if (path.length === 1) {
-		return path[0] === 'undefined' || getGlobalAtPath(path) !== null;
-	}
-	return getGlobalAtPath(path.slice(0, -1)) !== null;
 }

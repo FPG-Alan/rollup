@@ -1,24 +1,29 @@
-const assert = require('assert');
+const assert = require('node:assert');
 const { assertIncludes } = require('../../../utils.js');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'show errors with non-zero exit code for unfulfilled async plugin actions on exit',
-	command: 'rollup main.js -p ./buggy-plugin.js --silent',
-	after(err) {
+	command: 'rollup -c --silent',
+	after(error) {
 		// exit code check has to be here as error(err) is only called upon failure
-		assert.strictEqual(err && err.code, 1);
+		assert.strictEqual(error && error.code, 1);
 	},
-	error(err) {
+	error() {
 		// do not abort test upon error
 		return true;
 	},
 	stderr(stderr) {
-		assertIncludes(stderr, '[!] Error: unfinished hook action(s) on exit');
+		console.error(stderr);
+		assertIncludes(
+			stderr,
+			'Error: Unexpected early exit. This happens when Promises returned by plugins cannot resolve. Unfinished hook action(s) on exit:'
+		);
 
 		// these unfulfilled async hook actions may occur in random order
 		assertIncludes(stderr, '(buggy-plugin) resolveId "./c.js" "main.js"');
 		assertIncludes(stderr, '(buggy-plugin) load "./b.js"');
 		assertIncludes(stderr, '(buggy-plugin) transform "./a.js"');
-		assertIncludes(stderr, '(buggy-plugin) moduleParsed');
+		assertIncludes(stderr, '(buggy-plugin) moduleParsed "./d.js"');
+		assertIncludes(stderr, '(buggy-plugin) shouldTransformCachedModule "./e.js"');
 	}
-};
+});

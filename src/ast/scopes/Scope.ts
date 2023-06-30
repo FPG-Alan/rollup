@@ -7,13 +7,13 @@ import type Variable from '../variables/Variable';
 import type ChildScope from './ChildScope';
 
 export default class Scope {
-	children: ChildScope[] = [];
-	variables = new Map<string, Variable>();
+	readonly children: ChildScope[] = [];
+	readonly variables = new Map<string, Variable>();
 
 	addDeclaration(
 		identifier: Identifier,
 		context: AstContext,
-		init: ExpressionEntity | null,
+		init: ExpressionEntity,
 		_isHoisted: boolean
 	): LocalVariable {
 		const name = identifier.name;

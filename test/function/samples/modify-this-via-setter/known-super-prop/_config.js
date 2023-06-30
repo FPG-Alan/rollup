@@ -1,4 +1,3 @@
-module.exports = {
-	description: 'handles setters that modify "this" on prototypes for known properties',
-	minNodeVersion: 12
-};
+module.exports = defineTest({
+	description: 'handles setters that modify "this" on prototypes for known properties'
+});

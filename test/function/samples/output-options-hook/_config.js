@@ -1,6 +1,6 @@
-const assert = require('assert');
+const assert = require('node:assert');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'allows to read and modify options in the options hook',
 	exports(exports) {
 		assert.deepStrictEqual(exports, {
@@ -18,15 +18,20 @@ module.exports = {
 				assert.deepStrictEqual(JSON.parse(JSON.stringify(options)), {
 					amd: {
 						define: 'define',
-						autoId: false
+						autoId: false,
+						forceJsExtensionForImports: false
 					},
 					assetFileNames: 'assets/[name]-[hash][extname]',
 					chunkFileNames: '[name]-[hash].js',
 					compact: false,
+					dynamicImportInCjs: true,
 					entryFileNames: '[name].js',
-					esModule: true,
+					esModule: 'if-default-prop',
+					experimentalDeepDynamicChunkOptimization: false,
+					experimentalMinChunkSize: 1,
 					exports: 'auto',
 					extend: false,
+					externalImportAssertions: true,
 					externalLiveBindings: true,
 					format: 'cjs',
 					freeze: true,
@@ -34,7 +39,8 @@ module.exports = {
 						arrowFunctions: false,
 						constBindings: false,
 						objectShorthand: false,
-						reservedNamesAsProps: false
+						reservedNamesAsProps: true,
+						symbols: false
 					},
 					globals: {},
 					hoistTransitiveImports: true,
@@ -51,7 +57,7 @@ module.exports = {
 					sourcemap: false,
 					sourcemapExcludeSources: false,
 					strict: true,
-					systemNullSetters: false,
+					systemNullSetters: true,
 					validate: false
 				});
 				assert.strictEqual(options.banner(), 'exports.bar = 43;');
@@ -70,4 +76,4 @@ module.exports = {
 			}
 		}
 	}
-};
+});

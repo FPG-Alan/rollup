@@ -1,8 +1,8 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'adds Symbol.toStringTag property to dynamic imports',
 	options: {
 		output: {
-			namespaceToStringTag: true
+			generatedCode: { symbols: true }
 		}
 	}
-};
+});

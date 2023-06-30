@@ -1,6 +1,6 @@
-const assert = require('assert');
+const assert = require('node:assert');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'allows to read and modify options in the options hook',
 	options: {
 		input: 'unused',
@@ -10,16 +10,17 @@ module.exports = {
 			buildStart(options) {
 				assert.deepStrictEqual(JSON.parse(JSON.stringify(options)), {
 					acorn: {
-						allowAwaitOutsideFunction: true,
 						ecmaVersion: 'latest',
-						preserveParens: false,
 						sourceType: 'module'
 					},
-					acornInjectPlugins: [],
+					acornInjectPlugins: [null],
 					context: 'undefined',
 					experimentalCacheExpiry: 10,
+					experimentalLogSideEffects: false,
 					input: ['used'],
-					makeAbsoluteExternalsRelative: true,
+					logLevel: 'info',
+					makeAbsoluteExternalsRelative: 'ifRelativeSource',
+					maxParallelFileOps: 20,
 					maxParallelFileReads: 20,
 					perf: false,
 					plugins: [
@@ -27,7 +28,7 @@ module.exports = {
 							name: 'test-plugin'
 						}
 					],
-					preserveEntrySignatures: 'strict',
+					preserveEntrySignatures: 'exports-only',
 					preserveSymlinks: false,
 					shimMissingExports: false,
 					strictDeprecations: true,
@@ -51,4 +52,4 @@ module.exports = {
 			}
 		}
 	}
-};
+});

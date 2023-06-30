@@ -1,7 +1,5 @@
 'use strict';
 
-Object.defineProperty(exports, '__esModule', { value: true });
-
 function log(url) {
 	if (typeof document === 'undefined') {
 		console.log(url);
@@ -10,7 +8,7 @@ function log(url) {
 	}
 }
 
-log('main: ' + (typeof document === 'undefined' ? new (require('u' + 'rl').URL)('file:' + __filename).href : (document.currentScript && document.currentScript.src || new URL('main.js', document.baseURI).href)));
+log('main: ' + (typeof document === 'undefined' ? require('u' + 'rl').pathToFileURL(__filename).href : (document.currentScript && document.currentScript.src || new URL('main.js', document.baseURI).href)));
 Promise.resolve().then(function () { return require('./nested/chunk.js'); });
 
 exports.log = log;

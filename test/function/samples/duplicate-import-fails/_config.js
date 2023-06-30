@@ -1,12 +1,10 @@
-const path = require('path');
+const path = require('node:path');
+const ID_MAIN = path.join(__dirname, 'main.js');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'disallows duplicate imports',
 	error: {
-		code: 'PARSE_ERROR',
-		message: `Identifier 'a' has already been declared`,
-		id: path.join(__dirname, 'main.js'),
-		parserError: {
+		cause: {
 			loc: {
 				column: 9,
 				line: 2
@@ -15,10 +13,13 @@ module.exports = {
 			pos: 36,
 			raisedAt: 39
 		},
+		code: 'PARSE_ERROR',
+		message: `Identifier 'a' has already been declared`,
+		id: ID_MAIN,
 		pos: 36,
-		watchFiles: [path.join(__dirname, 'main.js')],
+		watchFiles: [ID_MAIN],
 		loc: {
-			file: path.join(__dirname, 'main.js'),
+			file: ID_MAIN,
 			line: 2,
 			column: 9
 		},
@@ -30,6 +31,6 @@ module.exports = {
 			4: assert.equal(a, 1);
 		`
 	}
-};
+});
 
 // test copied from https://github.com/esnext/es6-module-transpiler/tree/master/test/examples/duplicate-import-fails

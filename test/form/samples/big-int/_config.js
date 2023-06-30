@@ -1,4 +1,3 @@
-module.exports = {
-	description: 'supports bigint via acorn plugin',
-	options: {}
-};
+module.exports = defineTest({
+	description: 'supports bigint via acorn plugin'
+});

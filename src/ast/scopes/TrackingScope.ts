@@ -5,12 +5,12 @@ import type LocalVariable from '../variables/LocalVariable';
 import BlockScope from './BlockScope';
 
 export default class TrackingScope extends BlockScope {
-	hoistedDeclarations: Identifier[] = [];
+	readonly hoistedDeclarations: Identifier[] = [];
 
 	addDeclaration(
 		identifier: Identifier,
 		context: AstContext,
-		init: ExpressionEntity | null,
+		init: ExpressionEntity,
 		isHoisted: boolean
 	): LocalVariable {
 		this.hoistedDeclarations.push(identifier);

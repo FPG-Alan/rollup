@@ -2,35 +2,45 @@ import type Chunk from '../Chunk';
 import type Graph from '../Graph';
 import type Module from '../Module';
 import type {
+	EmittedAsset,
 	EmittedChunk,
-	FilePlaceholder,
+	EmittedPrebuiltChunk,
+	LogHandler,
 	NormalizedInputOptions,
 	NormalizedOutputOptions,
-	OutputBundleWithPlaceholders,
-	WarningHandler
+	OutputChunk
 } from '../rollup/types';
 import { BuildPhase } from './buildPhase';
 import { createHash } from './crypto';
+import { getOrCreate } from './getOrCreate';
+import { defaultHashSize } from './hashPlaceholders';
+import { LOGLEVEL_WARN } from './logging';
 import {
-	errAssetNotFinalisedForFileName,
-	errAssetReferenceIdNotFoundForSetSource,
-	errAssetSourceAlreadySet,
-	errChunkNotGeneratedForFileName,
-	errFailedValidation,
-	errFileNameConflict,
-	errFileReferenceIdNotFoundForFilename,
-	errInvalidRollupPhaseForChunkEmission,
-	errNoAssetSourceSet,
 	error,
-	warnDeprecation
-} from './error';
+	logAssetNotFinalisedForFileName,
+	logAssetReferenceIdNotFoundForSetSource,
+	logAssetSourceAlreadySet,
+	logChunkNotGeneratedForFileName,
+	logFailedValidation,
+	logFileNameConflict,
+	logFileReferenceIdNotFoundForFilename,
+	logInvalidRollupPhaseForChunkEmission,
+	logNoAssetSourceSet
+} from './logs';
+import type { OutputBundleWithPlaceholders } from './outputBundle';
+import { FILE_PLACEHOLDER, lowercaseBundleKeys } from './outputBundle';
 import { extname } from './path';
 import { isPathFragment } from './relativeId';
 import { makeUnique, renderNamePattern } from './renderNamePattern';
 
+function getSourceHash(source: string | Uint8Array): string {
+	return createHash().update(source).digest('hex');
+}
+
 function generateAssetFileName(
 	name: string | undefined,
 	source: string | Uint8Array,
+	sourceHash: string,
 	outputOptions: NormalizedOutputOptions,
 	bundle: OutputBundleWithPlaceholders
 ): string {
@@ -42,73 +52,66 @@ function generateAssetFileName(
 				: outputOptions.assetFileNames,
 			'output.assetFileNames',
 			{
-				ext: () => extname(emittedName).substr(1),
+				ext: () => extname(emittedName).slice(1),
 				extname: () => extname(emittedName),
-				hash() {
-					const hash = createHash();
-					hash.update(emittedName);
-					hash.update(':');
-					hash.update(source);
-					return hash.digest('hex').substr(0, 8);
-				},
-				name: () => emittedName.substr(0, emittedName.length - extname(emittedName).length)
+				hash: size => sourceHash.slice(0, Math.max(0, size || defaultHashSize)),
+				name: () =>
+					emittedName.slice(0, Math.max(0, emittedName.length - extname(emittedName).length))
 			}
 		),
 		bundle
 	);
 }
 
-function reserveFileNameInBundle(
-	fileName: string,
-	bundle: OutputBundleWithPlaceholders,
-	warn: WarningHandler
-) {
-	if (fileName in bundle) {
-		warn(errFileNameConflict(fileName));
+function reserveFileNameInBundle(fileName: string, { bundle }: FileEmitterOutput, log: LogHandler) {
+	if (bundle[lowercaseBundleKeys].has(fileName.toLowerCase())) {
+		log(LOGLEVEL_WARN, logFileNameConflict(fileName));
+	} else {
+		bundle[fileName] = FILE_PLACEHOLDER;
 	}
-	bundle[fileName] = FILE_PLACEHOLDER;
 }
 
-interface ConsumedChunk {
-	fileName: string | undefined;
+type ConsumedChunk = Pick<EmittedChunk, 'fileName' | 'type'> & {
 	module: null | Module;
 	name: string;
-	type: 'chunk';
-}
+	referenceId: string;
+};
 
-interface ConsumedAsset {
-	fileName: string | undefined;
-	name: string | undefined;
-	source: string | Uint8Array | undefined;
-	type: 'asset';
-}
+type ConsumedPrebuiltChunk = EmittedPrebuiltChunk & {
+	referenceId: string;
+};
+
+type ConsumedAsset = EmittedAsset & {
+	needsCodeReference: boolean;
+	referenceId: string;
+};
+
+type ConsumedFile = ConsumedChunk | ConsumedAsset | ConsumedPrebuiltChunk;
+
+type EmittedFileType = ConsumedFile['type'];
 
 interface EmittedFile {
 	[key: string]: unknown;
 	fileName?: string;
 	name?: string;
-	type: 'chunk' | 'asset';
+	type: EmittedFileType;
 }
 
-type ConsumedFile = ConsumedChunk | ConsumedAsset;
+const emittedFileTypes: Set<EmittedFileType> = new Set(['chunk', 'asset', 'prebuilt-chunk']);
 
-export const FILE_PLACEHOLDER: FilePlaceholder = {
-	type: 'placeholder'
-};
-
-function hasValidType(
-	emittedFile: unknown
-): emittedFile is { [key: string]: unknown; type: 'asset' | 'chunk' } {
+function hasValidType(emittedFile: unknown): emittedFile is {
+	[key: string]: unknown;
+	type: EmittedFileType;
+} {
 	return Boolean(
 		emittedFile &&
-			((emittedFile as { [key: string]: unknown }).type === 'asset' ||
-				(emittedFile as { [key: string]: unknown }).type === 'chunk')
+			emittedFileTypes.has((emittedFile as { [key: string]: unknown; type: EmittedFileType }).type)
 	);
 }
 
 function hasValidName(emittedFile: {
 	[key: string]: unknown;
-	type: 'asset' | 'chunk';
+	type: EmittedFileType;
 }): emittedFile is EmittedFile {
 	const validatedName = emittedFile.fileName || emittedFile.name;
 	return !validatedName || (typeof validatedName === 'string' && !isPathFragment(validatedName));
@@ -122,7 +125,7 @@ function getValidSource(
 	if (!(typeof source === 'string' || source instanceof Uint8Array)) {
 		const assetName = emittedFile.fileName || emittedFile.name || fileReferenceId;
 		return error(
-			errFailedValidation(
+			logFailedValidation(
 				`Could not set source for ${
 					typeof assetName === 'string' ? `asset "${assetName}"` : 'unnamed asset'
 				}, asset source needs to be a string, Uint8Array or Buffer.`
@@ -134,7 +137,7 @@ function getValidSource(
 
 function getAssetFileName(file: ConsumedAsset, referenceId: string): string {
 	if (typeof file.fileName !== 'string') {
-		return error(errAssetNotFinalisedForFileName(file.name || referenceId));
+		return error(logAssetNotFinalisedForFileName(file.name || referenceId));
 	}
 	return file.fileName;
 }
@@ -143,16 +146,27 @@ function getChunkFileName(
 	file: ConsumedChunk,
 	facadeChunkByModule: ReadonlyMap<Module, Chunk> | null
 ): string {
-	const fileName = file.fileName || (file.module && facadeChunkByModule?.get(file.module)?.id);
-	if (!fileName) return error(errChunkNotGeneratedForFileName(file.fileName || file.name));
-	return fileName;
+	if (file.fileName) {
+		return file.fileName;
+	}
+	if (facadeChunkByModule) {
+		return facadeChunkByModule.get(file.module!)!.getFileName();
+	}
+	return error(logChunkNotGeneratedForFileName(file.fileName || file.name));
+}
+
+interface FileEmitterOutput {
+	bundle: OutputBundleWithPlaceholders;
+	fileNamesBySource: Map<string, string>;
+	outputOptions: NormalizedOutputOptions;
 }
 
 export class FileEmitter {
-	private bundle: OutputBundleWithPlaceholders | null = null;
 	private facadeChunkByModule: ReadonlyMap<Module, Chunk> | null = null;
 	private readonly filesByReferenceId: Map<string, ConsumedFile>;
-	private outputOptions: NormalizedOutputOptions | null = null;
+	private nextIdBase = 1;
+	private output: FileEmitterOutput | null = null;
+	private outputFileEmitters: FileEmitter[] = [];
 
 	constructor(
 		private readonly graph: Graph,
@@ -162,29 +176,26 @@ export class FileEmitter {
 		this.filesByReferenceId = baseFileEmitter
 			? new Map(baseFileEmitter.filesByReferenceId)
 			: new Map();
+		baseFileEmitter?.addOutputFileEmitter(this);
 	}
-
-	public assertAssetsFinalized = (): void => {
-		for (const [referenceId, emittedFile] of this.filesByReferenceId.entries()) {
-			if (emittedFile.type === 'asset' && typeof emittedFile.fileName !== 'string')
-				return error(errNoAssetSourceSet(emittedFile.name || referenceId));
-		}
-	};
 
 	public emitFile = (emittedFile: unknown): string => {
 		if (!hasValidType(emittedFile)) {
 			return error(
-				errFailedValidation(
-					`Emitted files must be of type "asset" or "chunk", received "${
+				logFailedValidation(
+					`Emitted files must be of type "asset", "chunk" or "prebuilt-chunk", received "${
 						emittedFile && (emittedFile as any).type
 					}".`
 				)
 			);
 		}
+		if (emittedFile.type === 'prebuilt-chunk') {
+			return this.emitPrebuiltChunk(emittedFile);
+		}
 		if (!hasValidName(emittedFile)) {
 			return error(
-				errFailedValidation(
-					`The "fileName" or "name" properties of emitted files must be strings that are neither absolute nor relative paths, received "${
+				logFailedValidation(
+					`The "fileName" or "name" properties of emitted chunks and assets must be strings that are neither absolute nor relative paths, received "${
 						emittedFile.fileName || emittedFile.name
 					}".`
 				)
@@ -192,110 +203,179 @@ export class FileEmitter {
 		}
 		if (emittedFile.type === 'chunk') {
 			return this.emitChunk(emittedFile);
-		} else {
-			return this.emitAsset(emittedFile);
+		}
+		return this.emitAsset(emittedFile);
+	};
+
+	public finaliseAssets = (): void => {
+		for (const [referenceId, emittedFile] of this.filesByReferenceId) {
+			if (emittedFile.type === 'asset' && typeof emittedFile.fileName !== 'string')
+				return error(logNoAssetSourceSet(emittedFile.name || referenceId));
 		}
 	};
 
 	public getFileName = (fileReferenceId: string): string => {
 		const emittedFile = this.filesByReferenceId.get(fileReferenceId);
-		if (!emittedFile) return error(errFileReferenceIdNotFoundForFilename(fileReferenceId));
+		if (!emittedFile) return error(logFileReferenceIdNotFoundForFilename(fileReferenceId));
 		if (emittedFile.type === 'chunk') {
 			return getChunkFileName(emittedFile, this.facadeChunkByModule);
-		} else {
-			return getAssetFileName(emittedFile, fileReferenceId);
 		}
+		if (emittedFile.type === 'prebuilt-chunk') {
+			return emittedFile.fileName;
+		}
+		return getAssetFileName(emittedFile, fileReferenceId);
 	};
 
 	public setAssetSource = (referenceId: string, requestedSource: unknown): void => {
 		const consumedFile = this.filesByReferenceId.get(referenceId);
-		if (!consumedFile) return error(errAssetReferenceIdNotFoundForSetSource(referenceId));
+		if (!consumedFile) return error(logAssetReferenceIdNotFoundForSetSource(referenceId));
 		if (consumedFile.type !== 'asset') {
 			return error(
-				errFailedValidation(
+				logFailedValidation(
 					`Asset sources can only be set for emitted assets but "${referenceId}" is an emitted chunk.`
 				)
 			);
 		}
 		if (consumedFile.source !== undefined) {
-			return error(errAssetSourceAlreadySet(consumedFile.name || referenceId));
+			return error(logAssetSourceAlreadySet(consumedFile.name || referenceId));
 		}
 		const source = getValidSource(requestedSource, consumedFile, referenceId);
-		if (this.bundle) {
-			this.finalizeAsset(consumedFile, source, referenceId, this.bundle);
+		if (this.output) {
+			this.finalizeAdditionalAsset(consumedFile, source, this.output);
 		} else {
 			consumedFile.source = source;
+			for (const emitter of this.outputFileEmitters) {
+				emitter.finalizeAdditionalAsset(consumedFile, source, emitter.output!);
+			}
 		}
+	};
+
+	public setChunkInformation = (facadeChunkByModule: ReadonlyMap<Module, Chunk>): void => {
+		this.facadeChunkByModule = facadeChunkByModule;
 	};
 
 	public setOutputBundle = (
-		outputBundle: OutputBundleWithPlaceholders,
-		outputOptions: NormalizedOutputOptions,
-		facadeChunkByModule: ReadonlyMap<Module, Chunk>
+		bundle: OutputBundleWithPlaceholders,
+		outputOptions: NormalizedOutputOptions
 	): void => {
-		this.outputOptions = outputOptions;
-		this.bundle = outputBundle;
-		this.facadeChunkByModule = facadeChunkByModule;
+		const output = (this.output = {
+			bundle,
+			fileNamesBySource: new Map<string, string>(),
+			outputOptions
+		});
 		for (const emittedFile of this.filesByReferenceId.values()) {
 			if (emittedFile.fileName) {
-				reserveFileNameInBundle(emittedFile.fileName, this.bundle, this.options.onwarn);
+				reserveFileNameInBundle(emittedFile.fileName, output, this.options.onLog);
 			}
 		}
-		for (const [referenceId, consumedFile] of this.filesByReferenceId.entries()) {
+		const consumedAssetsByHash = new Map<string, ConsumedAsset[]>();
+		for (const consumedFile of this.filesByReferenceId.values()) {
 			if (consumedFile.type === 'asset' && consumedFile.source !== undefined) {
-				this.finalizeAsset(consumedFile, consumedFile.source, referenceId, this.bundle);
+				if (consumedFile.fileName) {
+					this.finalizeAdditionalAsset(consumedFile, consumedFile.source, output);
+				} else {
+					const sourceHash = getSourceHash(consumedFile.source);
+					getOrCreate(consumedAssetsByHash, sourceHash, () => []).push(consumedFile);
+				}
+			} else if (consumedFile.type === 'prebuilt-chunk') {
+				this.output.bundle[consumedFile.fileName] = this.createPrebuiltChunk(consumedFile);
 			}
+		}
+		for (const [sourceHash, consumedFiles] of consumedAssetsByHash) {
+			this.finalizeAssetsWithSameSource(consumedFiles, sourceHash, output);
 		}
 	};
 
+	private addOutputFileEmitter(outputFileEmitter: FileEmitter) {
+		this.outputFileEmitters.push(outputFileEmitter);
+	}
+
 	private assignReferenceId(file: ConsumedFile, idBase: string): string {
-		let referenceId: string | undefined;
+		let referenceId = idBase;
+
 		do {
-			const hash = createHash();
-			if (referenceId) {
-				hash.update(referenceId);
-			} else {
-				hash.update(idBase);
-			}
-			referenceId = hash.digest('hex').substr(0, 8);
-		} while (this.filesByReferenceId.has(referenceId));
+			referenceId = createHash().update(referenceId).digest('hex').slice(0, 8);
+		} while (
+			this.filesByReferenceId.has(referenceId) ||
+			this.outputFileEmitters.some(({ filesByReferenceId }) => filesByReferenceId.has(referenceId))
+		);
+		file.referenceId = referenceId;
 		this.filesByReferenceId.set(referenceId, file);
+		for (const { filesByReferenceId } of this.outputFileEmitters) {
+			filesByReferenceId.set(referenceId, file);
+		}
 		return referenceId;
+	}
+
+	private createPrebuiltChunk(prebuiltChunk: ConsumedPrebuiltChunk): OutputChunk {
+		return {
+			code: prebuiltChunk.code,
+			dynamicImports: [],
+			exports: prebuiltChunk.exports || [],
+			facadeModuleId: null,
+			fileName: prebuiltChunk.fileName,
+			implicitlyLoadedBefore: [],
+			importedBindings: {},
+			imports: [],
+			isDynamicEntry: false,
+			isEntry: false,
+			isImplicitEntry: false,
+			map: prebuiltChunk.map || null,
+			moduleIds: [],
+			modules: {},
+			name: prebuiltChunk.fileName,
+			referencedFiles: [],
+			type: 'chunk'
+		};
 	}
 
 	private emitAsset(emittedAsset: EmittedFile): string {
 		const source =
-			typeof emittedAsset.source !== 'undefined'
-				? getValidSource(emittedAsset.source, emittedAsset, null)
-				: undefined;
+			emittedAsset.source === undefined
+				? undefined
+				: getValidSource(emittedAsset.source, emittedAsset, null);
 		const consumedAsset: ConsumedAsset = {
 			fileName: emittedAsset.fileName,
 			name: emittedAsset.name,
+			needsCodeReference: !!emittedAsset.needsCodeReference,
+			referenceId: '',
 			source,
 			type: 'asset'
 		};
 		const referenceId = this.assignReferenceId(
 			consumedAsset,
-			emittedAsset.fileName || emittedAsset.name || emittedAsset.type
+			emittedAsset.fileName || emittedAsset.name || String(this.nextIdBase++)
 		);
-		if (this.bundle) {
-			if (emittedAsset.fileName) {
-				reserveFileNameInBundle(emittedAsset.fileName, this.bundle, this.options.onwarn);
-			}
-			if (source !== undefined) {
-				this.finalizeAsset(consumedAsset, source, referenceId, this.bundle);
+		if (this.output) {
+			this.emitAssetWithReferenceId(consumedAsset, this.output);
+		} else {
+			for (const fileEmitter of this.outputFileEmitters) {
+				fileEmitter.emitAssetWithReferenceId(consumedAsset, fileEmitter.output!);
 			}
 		}
 		return referenceId;
 	}
 
+	private emitAssetWithReferenceId(
+		consumedAsset: Readonly<ConsumedAsset>,
+		output: FileEmitterOutput
+	) {
+		const { fileName, source } = consumedAsset;
+		if (fileName) {
+			reserveFileNameInBundle(fileName, output, this.options.onLog);
+		}
+		if (source !== undefined) {
+			this.finalizeAdditionalAsset(consumedAsset, source, output);
+		}
+	}
+
 	private emitChunk(emittedChunk: EmittedFile): string {
 		if (this.graph.phase > BuildPhase.LOAD_AND_PARSE) {
-			return error(errInvalidRollupPhaseForChunkEmission());
+			return error(logInvalidRollupPhaseForChunkEmission());
 		}
 		if (typeof emittedChunk.id !== 'string') {
 			return error(
-				errFailedValidation(
+				logFailedValidation(
 					`Emitted chunks need to have a valid string id, received "${emittedChunk.id}"`
 				)
 			);
@@ -304,6 +384,7 @@ export class FileEmitter {
 			fileName: emittedChunk.fileName,
 			module: null,
 			name: emittedChunk.name || emittedChunk.id,
+			referenceId: '',
 			type: 'chunk'
 		};
 		this.graph.moduleLoader
@@ -317,69 +398,127 @@ export class FileEmitter {
 		return this.assignReferenceId(consumedChunk, emittedChunk.id);
 	}
 
-	private finalizeAsset(
-		consumedFile: ConsumedFile,
+	private emitPrebuiltChunk(
+		emitPrebuiltChunk: Omit<EmittedFile, 'fileName' | 'name'> &
+			Pick<EmittedPrebuiltChunk, 'exports' | 'map'>
+	): string {
+		if (typeof emitPrebuiltChunk.code !== 'string') {
+			return error(
+				logFailedValidation(
+					`Emitted prebuilt chunks need to have a valid string code, received "${emitPrebuiltChunk.code}".`
+				)
+			);
+		}
+		if (
+			typeof emitPrebuiltChunk.fileName !== 'string' ||
+			isPathFragment(emitPrebuiltChunk.fileName)
+		) {
+			return error(
+				logFailedValidation(
+					`The "fileName" property of emitted prebuilt chunks must be strings that are neither absolute nor relative paths, received "${emitPrebuiltChunk.fileName}".`
+				)
+			);
+		}
+		const consumedPrebuiltChunk: ConsumedPrebuiltChunk = {
+			code: emitPrebuiltChunk.code,
+			exports: emitPrebuiltChunk.exports,
+			fileName: emitPrebuiltChunk.fileName,
+			map: emitPrebuiltChunk.map,
+			referenceId: '',
+			type: 'prebuilt-chunk'
+		};
+		const referenceId = this.assignReferenceId(
+			consumedPrebuiltChunk,
+			consumedPrebuiltChunk.fileName
+		);
+		if (this.output) {
+			this.output.bundle[consumedPrebuiltChunk.fileName] =
+				this.createPrebuiltChunk(consumedPrebuiltChunk);
+		}
+		return referenceId;
+	}
+
+	private finalizeAdditionalAsset(
+		consumedFile: Readonly<ConsumedAsset>,
 		source: string | Uint8Array,
-		referenceId: string,
-		bundle: OutputBundleWithPlaceholders
+		{ bundle, fileNamesBySource, outputOptions }: FileEmitterOutput
 	): void {
-		const fileName =
-			consumedFile.fileName ||
-			findExistingAssetFileNameWithSource(bundle, source) ||
-			generateAssetFileName(consumedFile.name, source, this.outputOptions!, bundle);
+		let { fileName, needsCodeReference, referenceId } = consumedFile;
+
+		// Deduplicate assets if an explicit fileName is not provided
+		if (!fileName) {
+			const sourceHash = getSourceHash(source);
+			fileName = fileNamesBySource.get(sourceHash);
+			if (!fileName) {
+				fileName = generateAssetFileName(
+					consumedFile.name,
+					source,
+					sourceHash,
+					outputOptions,
+					bundle
+				);
+				fileNamesBySource.set(sourceHash, fileName);
+			}
+		}
 
 		// We must not modify the original assets to avoid interaction between outputs
 		const assetWithFileName = { ...consumedFile, fileName, source };
 		this.filesByReferenceId.set(referenceId, assetWithFileName);
-		const { options } = this;
+
+		const existingAsset = bundle[fileName];
+		if (existingAsset?.type === 'asset') {
+			existingAsset.needsCodeReference &&= needsCodeReference;
+		} else {
+			bundle[fileName] = {
+				fileName,
+				name: consumedFile.name,
+				needsCodeReference,
+				source,
+				type: 'asset'
+			};
+		}
+	}
+
+	private finalizeAssetsWithSameSource(
+		consumedFiles: ReadonlyArray<ConsumedAsset>,
+		sourceHash: string,
+		{ bundle, fileNamesBySource, outputOptions }: FileEmitterOutput
+	): void {
+		let fileName = '';
+		let usedConsumedFile: ConsumedAsset;
+		let needsCodeReference = true;
+		for (const consumedFile of consumedFiles) {
+			needsCodeReference &&= consumedFile.needsCodeReference;
+			const assetFileName = generateAssetFileName(
+				consumedFile.name,
+				consumedFile.source!,
+				sourceHash,
+				outputOptions,
+				bundle
+			);
+			if (
+				!fileName ||
+				assetFileName.length < fileName.length ||
+				(assetFileName.length === fileName.length && assetFileName < fileName)
+			) {
+				fileName = assetFileName;
+				usedConsumedFile = consumedFile;
+			}
+		}
+		fileNamesBySource.set(sourceHash, fileName);
+
+		for (const consumedFile of consumedFiles) {
+			// We must not modify the original assets to avoid interaction between outputs
+			const assetWithFileName = { ...consumedFile, fileName };
+			this.filesByReferenceId.set(consumedFile.referenceId, assetWithFileName);
+		}
+
 		bundle[fileName] = {
 			fileName,
-			get isAsset(): true {
-				warnDeprecation(
-					'Accessing "isAsset" on files in the bundle is deprecated, please use "type === \'asset\'" instead',
-					true,
-					options
-				);
-
-				return true;
-			},
-			name: consumedFile.name,
-			source,
+			name: usedConsumedFile!.name,
+			needsCodeReference,
+			source: usedConsumedFile!.source!,
 			type: 'asset'
 		};
 	}
-}
-
-function findExistingAssetFileNameWithSource(
-	bundle: OutputBundleWithPlaceholders,
-	source: string | Uint8Array
-): string | null {
-	for (const [fileName, outputFile] of Object.entries(bundle)) {
-		if (outputFile.type === 'asset' && areSourcesEqual(source, outputFile.source)) return fileName;
-	}
-	return null;
-}
-
-function areSourcesEqual(
-	sourceA: string | Uint8Array | Buffer,
-	sourceB: string | Uint8Array | Buffer
-): boolean {
-	if (typeof sourceA === 'string') {
-		return sourceA === sourceB;
-	}
-	if (typeof sourceB === 'string') {
-		return false;
-	}
-	if ('equals' in sourceA) {
-		return sourceA.equals(sourceB);
-	}
-	if (sourceA.length !== sourceB.length) {
-		return false;
-	}
-	for (let index = 0; index < sourceA.length; index++) {
-		if (sourceA[index] !== sourceB[index]) {
-			return false;
-		}
-	}
-	return true;
 }

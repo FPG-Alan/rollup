@@ -1,11 +1,11 @@
-const assert = require('assert');
-const path = require('path');
+const assert = require('node:assert');
+const path = require('node:path');
 
 const mockedValue = {
 	val: 'A value'
 };
 
-module.exports = {
+module.exports = defineTest({
 	description: 'allows a nonexistent relative module to be configured as external',
 	options: {
 		external: [path.join(__dirname, './nonexistent-relative-dependency.js')]
@@ -18,4 +18,4 @@ module.exports = {
 	exports() {
 		assert.equal(mockedValue.wasAltered, true);
 	}
-};
+});

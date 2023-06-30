@@ -1,13 +1,13 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'correctly exports resolved import.meta.url',
 	options: {
 		plugins: [
 			{
-				resolveImportMeta(prop) {
-					return prop ? "'url'" : "'meta'";
+				resolveImportMeta(property) {
+					return property ? "'url'" : "'meta'";
 				}
 			}
 		],
 		output: { name: 'bundle' }
 	}
-};
+});

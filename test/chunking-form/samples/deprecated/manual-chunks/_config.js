@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'manual chunks support',
 	options: {
 		strictDeprecations: false,
@@ -7,5 +7,6 @@ module.exports = {
 			lib1: ['lib1.js'],
 			deps2and3: ['dep2.js', 'dep3.js']
 		}
-	}
-};
+	},
+	expectedWarnings: ['DEPRECATED_FEATURE']
+});

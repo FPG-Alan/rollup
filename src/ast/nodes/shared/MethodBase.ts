@@ -1,7 +1,12 @@
-import { type CallOptions, NO_ARGS } from '../../CallOptions';
 import type { DeoptimizableEntity } from '../../DeoptimizableEntity';
 import type { HasEffectsContext } from '../../ExecutionContext';
-import { EVENT_ACCESSED, EVENT_ASSIGNED, EVENT_CALLED, type NodeEvent } from '../../NodeEvents';
+import type { NodeInteraction, NodeInteractionCalled } from '../../NodeInteractions';
+import {
+	INTERACTION_ACCESSED,
+	INTERACTION_ASSIGNED,
+	INTERACTION_CALLED,
+	NODE_INTERACTION_UNKNOWN_CALL
+} from '../../NodeInteractions';
 import {
 	EMPTY_PATH,
 	type ObjectPath,
@@ -12,7 +17,7 @@ import type PrivateIdentifier from '../PrivateIdentifier';
 import {
 	type ExpressionEntity,
 	type LiteralValueOrUnknown,
-	UNKNOWN_EXPRESSION
+	UNKNOWN_RETURN_EXPRESSION
 } from './Expression';
 import { type ExpressionNode, NodeBase } from './Node';
 import type { PatternNode } from './Pattern';
@@ -23,49 +28,48 @@ export default class MethodBase extends NodeBase implements DeoptimizableEntity 
 	declare kind: 'constructor' | 'method' | 'init' | 'get' | 'set';
 	declare value: ExpressionNode | (ExpressionNode & PatternNode);
 
-	private accessedValue: ExpressionEntity | null = null;
-	private accessorCallOptions: CallOptions = {
-		args: NO_ARGS,
-		thisParam: null,
-		withNew: false
-	};
+	private accessedValue: [expression: ExpressionEntity, isPure: boolean] | null = null;
+
+	deoptimizeArgumentsOnInteractionAtPath(
+		interaction: NodeInteraction,
+		path: ObjectPath,
+		recursionTracker: PathTracker
+	): void {
+		if (interaction.type === INTERACTION_ACCESSED && this.kind === 'get' && path.length === 0) {
+			return this.value.deoptimizeArgumentsOnInteractionAtPath(
+				{
+					args: interaction.args,
+					type: INTERACTION_CALLED,
+					withNew: false
+				},
+				EMPTY_PATH,
+				recursionTracker
+			);
+		}
+		if (interaction.type === INTERACTION_ASSIGNED && this.kind === 'set' && path.length === 0) {
+			return this.value.deoptimizeArgumentsOnInteractionAtPath(
+				{
+					args: interaction.args,
+					type: INTERACTION_CALLED,
+					withNew: false
+				},
+				EMPTY_PATH,
+				recursionTracker
+			);
+		}
+		this.getAccessedValue()[0].deoptimizeArgumentsOnInteractionAtPath(
+			interaction,
+			path,
+			recursionTracker
+		);
+	}
 
 	// As getter properties directly receive their values from fixed function
 	// expressions, there is no known situation where a getter is deoptimized.
 	deoptimizeCache(): void {}
 
 	deoptimizePath(path: ObjectPath): void {
-		this.getAccessedValue().deoptimizePath(path);
-	}
-
-	deoptimizeThisOnEventAtPath(
-		event: NodeEvent,
-		path: ObjectPath,
-		thisParameter: ExpressionEntity,
-		recursionTracker: PathTracker
-	): void {
-		if (event === EVENT_ACCESSED && this.kind === 'get' && path.length === 0) {
-			return this.value.deoptimizeThisOnEventAtPath(
-				EVENT_CALLED,
-				EMPTY_PATH,
-				thisParameter,
-				recursionTracker
-			);
-		}
-		if (event === EVENT_ASSIGNED && this.kind === 'set' && path.length === 0) {
-			return this.value.deoptimizeThisOnEventAtPath(
-				EVENT_CALLED,
-				EMPTY_PATH,
-				thisParameter,
-				recursionTracker
-			);
-		}
-		this.getAccessedValue().deoptimizeThisOnEventAtPath(
-			event,
-			path,
-			thisParameter,
-			recursionTracker
-		);
+		this.getAccessedValue()[0].deoptimizePath(path);
 	}
 
 	getLiteralValueAtPath(
@@ -73,18 +77,18 @@ export default class MethodBase extends NodeBase implements DeoptimizableEntity 
 		recursionTracker: PathTracker,
 		origin: DeoptimizableEntity
 	): LiteralValueOrUnknown {
-		return this.getAccessedValue().getLiteralValueAtPath(path, recursionTracker, origin);
+		return this.getAccessedValue()[0].getLiteralValueAtPath(path, recursionTracker, origin);
 	}
 
 	getReturnExpressionWhenCalledAtPath(
 		path: ObjectPath,
-		callOptions: CallOptions,
+		interaction: NodeInteractionCalled,
 		recursionTracker: PathTracker,
 		origin: DeoptimizableEntity
-	): ExpressionEntity {
-		return this.getAccessedValue().getReturnExpressionWhenCalledAtPath(
+	): [expression: ExpressionEntity, isPure: boolean] {
+		return this.getAccessedValue()[0].getReturnExpressionWhenCalledAtPath(
 			path,
-			callOptions,
+			interaction,
 			recursionTracker,
 			origin
 		);
@@ -94,40 +98,51 @@ export default class MethodBase extends NodeBase implements DeoptimizableEntity 
 		return this.key.hasEffects(context);
 	}
 
-	hasEffectsWhenAccessedAtPath(path: ObjectPath, context: HasEffectsContext): boolean {
-		if (this.kind === 'get' && path.length === 0) {
-			return this.value.hasEffectsWhenCalledAtPath(EMPTY_PATH, this.accessorCallOptions, context);
-		}
-		return this.getAccessedValue().hasEffectsWhenAccessedAtPath(path, context);
-	}
-
-	hasEffectsWhenAssignedAtPath(path: ObjectPath, context: HasEffectsContext): boolean {
-		if (this.kind === 'set') {
-			return this.value.hasEffectsWhenCalledAtPath(EMPTY_PATH, this.accessorCallOptions, context);
-		}
-		return this.getAccessedValue().hasEffectsWhenAssignedAtPath(path, context);
-	}
-
-	hasEffectsWhenCalledAtPath(
+	hasEffectsOnInteractionAtPath(
 		path: ObjectPath,
-		callOptions: CallOptions,
+		interaction: NodeInteraction,
 		context: HasEffectsContext
 	): boolean {
-		return this.getAccessedValue().hasEffectsWhenCalledAtPath(path, callOptions, context);
+		if (this.kind === 'get' && interaction.type === INTERACTION_ACCESSED && path.length === 0) {
+			return this.value.hasEffectsOnInteractionAtPath(
+				EMPTY_PATH,
+				{
+					args: interaction.args,
+					type: INTERACTION_CALLED,
+					withNew: false
+				},
+				context
+			);
+		}
+		// setters are only called for empty paths
+		if (this.kind === 'set' && interaction.type === INTERACTION_ASSIGNED) {
+			return this.value.hasEffectsOnInteractionAtPath(
+				EMPTY_PATH,
+				{
+					args: interaction.args,
+					type: INTERACTION_CALLED,
+					withNew: false
+				},
+				context
+			);
+		}
+		return this.getAccessedValue()[0].hasEffectsOnInteractionAtPath(path, interaction, context);
 	}
 
-	protected getAccessedValue(): ExpressionEntity {
+	protected applyDeoptimizations() {}
+
+	protected getAccessedValue(): [expression: ExpressionEntity, isPure: boolean] {
 		if (this.accessedValue === null) {
 			if (this.kind === 'get') {
-				this.accessedValue = UNKNOWN_EXPRESSION;
+				this.accessedValue = UNKNOWN_RETURN_EXPRESSION;
 				return (this.accessedValue = this.value.getReturnExpressionWhenCalledAtPath(
 					EMPTY_PATH,
-					this.accessorCallOptions,
+					NODE_INTERACTION_UNKNOWN_CALL,
 					SHARED_RECURSION_TRACKER,
 					this
 				));
 			} else {
-				return (this.accessedValue = this.value);
+				return (this.accessedValue = [this.value, false]);
 			}
 		}
 		return this.accessedValue;

@@ -1,11 +1,12 @@
-const assert = require('assert');
-const path = require('path');
+const assert = require('node:assert');
+const path = require('node:path');
+const { getObject } = require('../../../../utils');
 
 function getId(name) {
 	return path.join(__dirname, `${name}.js`);
 }
 
-module.exports = {
+module.exports = defineTest({
 	description: 'provides additional chunk information to a manualChunks function',
 	options: {
 		strictDeprecations: false,
@@ -13,10 +14,13 @@ module.exports = {
 		output: {
 			manualChunks(id, { getModuleIds, getModuleInfo }) {
 				assert.deepStrictEqual(
-					JSON.parse(JSON.stringify([...getModuleIds()].sort().map(id => getModuleInfo(id)))),
-					[
-						{
+					getObject(
+						[...getModuleIds()].map(id => [id, JSON.parse(JSON.stringify(getModuleInfo(id)))])
+					),
+					{
+						[getId('dynamic')]: {
 							id: getId('dynamic'),
+							assertions: {},
 							ast: {
 								type: 'Program',
 								start: 0,
@@ -77,25 +81,31 @@ module.exports = {
 							code: "export const promise = import('external');\nexport { default as internal } from './lib';\n",
 							dynamicallyImportedIdResolutions: [
 								{
+									assertions: {},
 									external: true,
 									id: 'external',
 									meta: {},
 									moduleSideEffects: true,
+									resolvedBy: 'rollup',
 									syntheticNamedExports: false
 								}
 							],
 							dynamicallyImportedIds: ['external'],
 							dynamicImporters: [getId('main')],
+							exports: ['promise', 'internal'],
+							exportedBindings: { '.': ['promise'], './lib': ['internal'] },
 							hasDefaultExport: false,
 							moduleSideEffects: true,
 							implicitlyLoadedAfterOneOf: [],
 							implicitlyLoadedBefore: [],
 							importedIdResolutions: [
 								{
+									assertions: {},
 									external: false,
 									id: getId('lib'),
 									meta: {},
 									moduleSideEffects: true,
+									resolvedBy: 'rollup',
 									syntheticNamedExports: false
 								}
 							],
@@ -107,8 +117,9 @@ module.exports = {
 							meta: {},
 							syntheticNamedExports: false
 						},
-						{
+						[getId('lib')]: {
 							id: getId('lib'),
+							assertions: {},
 							ast: {
 								type: 'Program',
 								start: 0,
@@ -127,6 +138,8 @@ module.exports = {
 							dynamicallyImportedIdResolutions: [],
 							dynamicallyImportedIds: [],
 							dynamicImporters: [],
+							exportedBindings: { '.': ['default'] },
+							exports: ['default'],
 							hasDefaultExport: true,
 							moduleSideEffects: true,
 							implicitlyLoadedAfterOneOf: [],
@@ -140,8 +153,9 @@ module.exports = {
 							meta: {},
 							syntheticNamedExports: false
 						},
-						{
+						[getId('main')]: {
 							id: getId('main'),
+							assertions: {},
 							ast: {
 								type: 'Program',
 								start: 0,
@@ -224,32 +238,40 @@ module.exports = {
 							code: "export const promise = import('./dynamic');\nexport { default as value } from './lib';\nexport { external } from 'external';\n",
 							dynamicallyImportedIdResolutions: [
 								{
+									assertions: {},
 									external: false,
 									id: getId('dynamic'),
 									meta: {},
 									moduleSideEffects: true,
+									resolvedBy: 'rollup',
 									syntheticNamedExports: false
 								}
 							],
 							dynamicallyImportedIds: [getId('dynamic')],
 							dynamicImporters: [],
+							exportedBindings: { '.': ['promise'], './lib': ['value'], external: ['external'] },
+							exports: ['promise', 'value', 'external'],
 							hasDefaultExport: false,
 							moduleSideEffects: true,
 							implicitlyLoadedAfterOneOf: [],
 							implicitlyLoadedBefore: [],
 							importedIdResolutions: [
 								{
+									assertions: {},
 									external: false,
 									id: getId('lib'),
 									meta: {},
 									moduleSideEffects: true,
+									resolvedBy: 'rollup',
 									syntheticNamedExports: false
 								},
 								{
+									assertions: {},
 									external: true,
 									id: 'external',
 									meta: {},
 									moduleSideEffects: true,
+									resolvedBy: 'rollup',
 									syntheticNamedExports: false
 								}
 							],
@@ -261,13 +283,16 @@ module.exports = {
 							meta: {},
 							syntheticNamedExports: false
 						},
-						{
+						external: {
 							id: 'external',
+							assertions: {},
 							ast: null,
 							code: null,
 							dynamicallyImportedIdResolutions: [],
 							dynamicallyImportedIds: [],
 							dynamicImporters: [getId('dynamic')],
+							exportedBindings: null,
+							exports: null,
 							hasDefaultExport: null,
 							moduleSideEffects: true,
 							implicitlyLoadedAfterOneOf: [],
@@ -281,9 +306,10 @@ module.exports = {
 							meta: {},
 							syntheticNamedExports: false
 						}
-					]
+					}
 				);
 			}
 		}
-	}
-};
+	},
+	warnings: []
+});

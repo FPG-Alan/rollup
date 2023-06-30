@@ -1,10 +1,6 @@
 import type MagicString from 'magic-string';
 import type { RenderOptions } from '../../utils/renderHelpers';
-import {
-	BROKEN_FLOW_ERROR_RETURN_LABEL,
-	type HasEffectsContext,
-	type InclusionContext
-} from '../ExecutionContext';
+import { type HasEffectsContext, type InclusionContext } from '../ExecutionContext';
 import type * as NodeType from './NodeType';
 import { UNKNOWN_EXPRESSION } from './shared/Expression';
 import { type ExpressionNode, type IncludeChildren, StatementBase } from './shared/Node';
@@ -14,21 +10,15 @@ export default class ReturnStatement extends StatementBase {
 	declare type: NodeType.tReturnStatement;
 
 	hasEffects(context: HasEffectsContext): boolean {
-		if (
-			!context.ignore.returnYield ||
-			(this.argument !== null && this.argument.hasEffects(context))
-		)
-			return true;
-		context.brokenFlow = BROKEN_FLOW_ERROR_RETURN_LABEL;
+		if (!context.ignore.returnYield || this.argument?.hasEffects(context)) return true;
+		context.brokenFlow = true;
 		return false;
 	}
 
 	include(context: InclusionContext, includeChildrenRecursively: IncludeChildren): void {
 		this.included = true;
-		if (this.argument) {
-			this.argument.include(context, includeChildrenRecursively);
-		}
-		context.brokenFlow = BROKEN_FLOW_ERROR_RETURN_LABEL;
+		this.argument?.include(context, includeChildrenRecursively);
+		context.brokenFlow = true;
 	}
 
 	initialise(): void {

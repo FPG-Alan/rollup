@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'does not use arrow functions',
 	options: {
 		external: [
@@ -22,10 +22,13 @@ module.exports = {
 				if (id === 'externalAuto') {
 					return 'auto';
 				}
-				return true;
+				return 'compat';
 			},
 			name: 'bundle',
-			noConflict: true
+			noConflict: true,
+			dynamicImportInCjs: false,
+			systemNullSetters: false
 		}
-	}
-};
+	},
+	expectedWarnings: ['DEPRECATED_FEATURE']
+});

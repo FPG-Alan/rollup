@@ -1,15 +1,12 @@
-const assert = require('assert');
-const {
-	existsSync,
-	promises: fs,
-	readdirSync,
-	readFileSync,
-	unlinkSync,
-	writeFileSync
-} = require('fs');
-const { resolve } = require('path');
-const { chdir, cwd, hrtime } = require('process');
-const { copy, removeSync } = require('fs-extra');
+const assert = require('node:assert');
+const { existsSync, readdirSync, readFileSync, rmSync, unlinkSync } = require('node:fs');
+const { rm, unlink, writeFile } = require('node:fs/promises');
+const { resolve } = require('node:path');
+const { chdir, cwd, hrtime } = require('node:process');
+const { copy } = require('fs-extra');
+/**
+ * @type {import('../../src/rollup/types')} Rollup
+ */
 const rollup = require('../../dist/rollup');
 const { atomicWriteFileSync, wait } = require('../utils');
 
@@ -18,7 +15,10 @@ describe('rollup.watch', () => {
 
 	beforeEach(() => {
 		chdir(cwd());
-		return removeSync('test/_tmp');
+		return rm('test/_tmp', {
+			force: true,
+			recursive: true
+		});
 	});
 
 	afterEach(() => {
@@ -28,52 +28,6 @@ describe('rollup.watch', () => {
 		}
 	});
 
-	function run(file) {
-		const resolved = require.resolve(file);
-		delete require.cache[resolved];
-		return require(resolved);
-	}
-
-	async function sequence(watcher, events, timeout = 300) {
-		await new Promise((fulfil, reject) => {
-			function go(event) {
-				const next = events.shift();
-
-				if (!next) {
-					watcher.close();
-					fulfil();
-				} else if (typeof next === 'string') {
-					watcher.once('event', event => {
-						if (event.code !== next) {
-							watcher.close();
-							if (event.code === 'ERROR') console.log(event.error);
-							reject(new Error(`Expected ${next} event, got ${event.code}`));
-						} else {
-							go(event);
-						}
-					});
-				} else {
-					Promise.resolve()
-						.then(() => wait(timeout)) // gah, this appears to be necessary to fix random errors
-						.then(() => next(event))
-						.then(go)
-						.catch(error => {
-							watcher.close();
-							reject(error);
-						});
-				}
-			}
-
-			go();
-		});
-		return wait(100);
-	}
-
-	function getTimeDiffInMs(previous) {
-		const [seconds, nanoseconds] = hrtime(previous);
-		return seconds * 1e3 + nanoseconds / 1e6;
-	}
-
 	it('watches a file and triggers reruns if necessary', async () => {
 		let triggerRestart = false;
 
@@ -81,6 +35,7 @@ describe('rollup.watch', () => {
 		watcher = rollup.watch({
 			input: 'test/_tmp/input/main.js',
 			plugins: {
+				name: 'test-plugin',
 				options() {
 					assert.strictEqual(this.meta.watchMode, true, 'watchMode in options');
 				},
@@ -123,6 +78,59 @@ describe('rollup.watch', () => {
 				assert.strictEqual(run('../_tmp/output/bundle.js'), 44);
 			}
 		]);
+	});
+
+	it('waits for event listeners', async () => {
+		let run = 0;
+		const events = new Set();
+
+		await copy('test/watch/samples/basic', 'test/_tmp/input');
+		watcher = rollup.watch({
+			input: 'test/_tmp/input/main.js',
+			plugins: {
+				async writeBundle() {
+					if (run++ === 0) {
+						await wait(100);
+						atomicWriteFileSync('test/_tmp/input/main.js', 'export default 48;');
+						await wait(100);
+					}
+					if (run === 2) {
+						watcher.close();
+					}
+				}
+			},
+			output: {
+				file: 'test/_tmp/output/bundle.js',
+				format: 'cjs',
+				exports: 'auto'
+			}
+		});
+		await new Promise((resolve, reject) => {
+			let currentEvent = null;
+			const handleEvent = async (...parameters) => {
+				events.add(parameters[0]?.code);
+				if (currentEvent) {
+					watcher.close();
+					return reject(
+						new Error(
+							`Event ${JSON.stringify(parameters)} was emitted while handling ${JSON.stringify(
+								currentEvent
+							)}.`
+						)
+					);
+				}
+				currentEvent = parameters;
+				await wait(100);
+				currentEvent = null;
+			};
+			// This should work but should not have an effect
+			watcher.off('event', handleEvent);
+			watcher.on('event', handleEvent);
+			watcher.on('change', handleEvent);
+			watcher.on('restart', handleEvent);
+			watcher.on('close', resolve);
+		});
+		assert.deepStrictEqual([...events], ['START', 'BUNDLE_START', 'BUNDLE_END', 'END', undefined]);
 	});
 
 	it('does not fail for virtual files', async () => {
@@ -233,7 +241,7 @@ describe('rollup.watch', () => {
 		let ids;
 		const expectedIds = [WATCHED_ID, resolve('test/_tmp/input/main.js')];
 		await copy('test/watch/samples/watch-files', 'test/_tmp/input');
-		await fs.unlink(WATCHED_ID);
+		await unlink(WATCHED_ID);
 		await wait(100);
 		watcher = rollup.watch({
 			input: 'test/_tmp/input/main.js',
@@ -343,7 +351,7 @@ describe('rollup.watch', () => {
 				assert.strictEqual(lastEvent, null);
 				atomicWriteFileSync(WATCHED_ID, 'another');
 				await wait(100);
-				unlinkSync(WATCHED_ID);
+				await unlink(WATCHED_ID);
 			},
 			'START',
 			'BUNDLE_START',
@@ -354,7 +362,7 @@ describe('rollup.watch', () => {
 				lastEvent = null;
 				atomicWriteFileSync(WATCHED_ID, '123');
 				await wait(100);
-				unlinkSync(WATCHED_ID);
+				await unlink(WATCHED_ID);
 				// To ensure there is always another change to trigger a rebuild
 				atomicWriteFileSync(MAIN_ID, 'export default 43;');
 			},
@@ -376,12 +384,12 @@ describe('rollup.watch', () => {
 				assert.strictEqual(lastEvent, 'create');
 			}
 		]);
-	}).timeout(20000);
+	});
 
 	it('calls closeWatcher plugin hook', async () => {
 		let calls = 0;
-		let ctx1;
-		let ctx2;
+		let context1;
+		let context2;
 		await copy('test/watch/samples/basic', 'test/_tmp/input');
 		watcher = rollup.watch({
 			input: 'test/_tmp/input/main.js',
@@ -393,19 +401,21 @@ describe('rollup.watch', () => {
 			plugins: [
 				{
 					buildStart() {
-						ctx1 = this;
+						// eslint-disable-next-line @typescript-eslint/no-this-alias
+						context1 = this;
 					},
 					closeWatcher() {
-						assert.strictEqual(ctx1, this);
+						assert.strictEqual(context1, this);
 						calls++;
 					}
 				},
 				{
 					buildStart() {
-						ctx2 = this;
+						// eslint-disable-next-line @typescript-eslint/no-this-alias
+						context2 = this;
 					},
 					closeWatcher() {
-						assert.strictEqual(ctx2, this);
+						assert.strictEqual(context2, this);
 						calls++;
 					}
 				}
@@ -418,8 +428,8 @@ describe('rollup.watch', () => {
 			'END',
 			() => {
 				assert.strictEqual(run('../_tmp/output/bundle.js'), 42);
-				assert.ok(ctx1);
-				assert.ok(ctx2);
+				assert.ok(context1);
+				assert.ok(context2);
 				watcher.once('close', () => {
 					assert.strictEqual(calls, 2);
 				});
@@ -514,7 +524,8 @@ describe('rollup.watch', () => {
 			},
 			'START',
 			'BUNDLE_START',
-			'ERROR',
+			'ERROR:Unexpected token',
+			'END',
 			() => {
 				atomicWriteFileSync('test/_tmp/input/main.js', 'export default 43;');
 			},
@@ -541,7 +552,8 @@ describe('rollup.watch', () => {
 		return sequence(watcher, [
 			'START',
 			'BUNDLE_START',
-			'ERROR',
+			'ERROR:Unexpected token',
+			'END',
 			() => {
 				assert.strictEqual(existsSync('../_tmp/output/bundle.js'), false);
 				atomicWriteFileSync('test/_tmp/input/main.js', 'export default 43;');
@@ -577,9 +589,54 @@ describe('rollup.watch', () => {
 		return sequence(watcher, [
 			'START',
 			'BUNDLE_START',
-			'ERROR',
+			'ERROR:The first run failed, try again.',
+			'END',
 			() => {
 				assert.strictEqual(existsSync('../_tmp/output/bundle.js'), false);
+				atomicWriteFileSync('test/_tmp/input/main.js', 'export default 43;');
+			},
+			'START',
+			'BUNDLE_START',
+			'BUNDLE_END',
+			'END',
+			() => {
+				assert.strictEqual(run('../_tmp/output/bundle.js'), 43);
+			}
+		]);
+	});
+
+	it('awaits and recovers from a plugin error in the watchChange hook', async () => {
+		let fail = true;
+		await copy('test/watch/samples/basic', 'test/_tmp/input');
+		watcher = rollup.watch({
+			input: 'test/_tmp/input/main.js',
+			plugins: {
+				async watchChange() {
+					await new Promise(resolve => setTimeout(resolve, 300));
+					if (fail) {
+						this.error('Failed in watchChange');
+					}
+				}
+			},
+			output: {
+				file: 'test/_tmp/output/bundle.js',
+				format: 'cjs',
+				exports: 'auto'
+			}
+		});
+		return sequence(watcher, [
+			'START',
+			'BUNDLE_START',
+			'BUNDLE_END',
+			'END',
+			() => {
+				assert.strictEqual(run('../_tmp/output/bundle.js'), 42);
+				atomicWriteFileSync('test/_tmp/input/main.js', 'export default 21;');
+			},
+			'ERROR:Failed in watchChange',
+			'END',
+			() => {
+				fail = false;
 				atomicWriteFileSync('test/_tmp/input/main.js', 'export default 43;');
 			},
 			'START',
@@ -614,7 +671,8 @@ describe('rollup.watch', () => {
 			},
 			'START',
 			'BUNDLE_START',
-			'ERROR',
+			'ERROR:Unexpected token',
+			'END',
 			() => {
 				unlinkSync('test/_tmp/input/main.js');
 				atomicWriteFileSync('test/_tmp/input/main.js', 'export default 43;');
@@ -651,7 +709,8 @@ describe('rollup.watch', () => {
 			},
 			'START',
 			'BUNDLE_START',
-			'ERROR',
+			'ERROR:Unexpected token',
+			'END',
 			() => {
 				unlinkSync('test/_tmp/input/dep.js');
 				atomicWriteFileSync('test/_tmp/input/dep.js', 'export const value = 43;');
@@ -779,9 +838,9 @@ describe('rollup.watch', () => {
 			},
 			'START',
 			'BUNDLE_START',
-			'ERROR',
-			event => {
-				assert.strictEqual(event.error.message, 'Cannot import the generated bundle');
+			'ERROR:Cannot import the generated bundle',
+			'END',
+			() => {
 				atomicWriteFileSync('test/_tmp/input/main.js', 'export default 43;');
 			},
 			'START',
@@ -991,7 +1050,7 @@ describe('rollup.watch', () => {
 			'END',
 			() => {
 				const generated = readFileSync('test/_tmp/output/bundle.js', {
-					encoding: 'utf-8'
+					encoding: 'utf8'
 				});
 				assert.ok(/jQuery/.test(generated));
 			}
@@ -1049,7 +1108,10 @@ describe('rollup.watch', () => {
 			'END',
 			() => {
 				[dynamicName, staticName, chunkName] = readdirSync('test/_tmp/output').sort();
-				removeSync('test/_tmp/output');
+				rmSync('test/_tmp/output', {
+					force: true,
+					recursive: true
+				});
 
 				// this should only update the hash of that particular entry point
 				atomicWriteFileSync(
@@ -1064,7 +1126,10 @@ describe('rollup.watch', () => {
 			() => {
 				const [newDynamicName, newStaticName, newChunkName] =
 					readdirSync('test/_tmp/output').sort();
-				removeSync('test/_tmp/output');
+				rmSync('test/_tmp/output', {
+					force: true,
+					recursive: true
+				});
 				assert.notEqual(newStaticName, staticName);
 				assert.strictEqual(newDynamicName, dynamicName);
 				assert.strictEqual(newChunkName, chunkName);
@@ -1087,56 +1152,56 @@ describe('rollup.watch', () => {
 		]);
 	});
 
-	it('runs transforms again on previously erroring files that were changed back', () => {
+	it('runs transforms again on previously erroring files that were changed back', async () => {
 		const brokenFiles = new Set();
+		await copy('test/watch/samples/basic', 'test/_tmp/input');
 		const INITIAL_CONTENT = 'export default 42;';
-		fs.writeFile('test/_tmp/input/main.js', INITIAL_CONTENT).then(() => {
-			watcher = rollup.watch({
-				input: 'test/_tmp/input/main.js',
-				plugins: {
-					transform(code, id) {
-						if (code.includes('broken')) {
-							brokenFiles.add(id);
-							throw new Error('Broken in transform');
-						}
-						brokenFiles.delete(id);
-					},
-					generateBundle() {
-						if (brokenFiles.size > 0) {
-							throw new Error('Broken in generate');
-						}
+		atomicWriteFileSync('test/_tmp/input/main.js', INITIAL_CONTENT);
+		watcher = rollup.watch({
+			input: 'test/_tmp/input/main.js',
+			plugins: {
+				transform(code, id) {
+					if (code.includes('broken')) {
+						brokenFiles.add(id);
+						throw new Error('Broken in transform');
 					}
+					brokenFiles.delete(id);
 				},
-				output: {
-					file: 'test/_tmp/output/bundle.js',
-					format: 'cjs',
-					exports: 'auto'
+				generateBundle() {
+					if (brokenFiles.size > 0) {
+						throw new Error('Broken in generate');
+					}
 				}
-			});
-			return sequence(watcher, [
-				'START',
-				'BUNDLE_START',
-				'BUNDLE_END',
-				'END',
-				() => {
-					assert.strictEqual(run('../_tmp/output/bundle.js'), 42);
-					atomicWriteFileSync('test/_tmp/input/main.js', 'export default "broken";');
-				},
-				'START',
-				'BUNDLE_START',
-				'ERROR',
-				() => {
-					atomicWriteFileSync('test/_tmp/input/main.js', INITIAL_CONTENT);
-				},
-				'START',
-				'BUNDLE_START',
-				'BUNDLE_END',
-				'END',
-				() => {
-					assert.strictEqual(run('../_tmp/output/bundle.js'), 42);
-				}
-			]);
+			},
+			output: {
+				file: 'test/_tmp/output/bundle.js',
+				format: 'cjs',
+				exports: 'auto'
+			}
 		});
+		return sequence(watcher, [
+			'START',
+			'BUNDLE_START',
+			'BUNDLE_END',
+			'END',
+			() => {
+				assert.strictEqual(run('../_tmp/output/bundle.js'), 42);
+				atomicWriteFileSync('test/_tmp/input/main.js', 'export default "broken";');
+			},
+			'START',
+			'BUNDLE_START',
+			'ERROR:Broken in transform',
+			() => {
+				atomicWriteFileSync('test/_tmp/input/main.js', INITIAL_CONTENT);
+			},
+			'START',
+			'BUNDLE_START',
+			'BUNDLE_END',
+			'END',
+			() => {
+				assert.strictEqual(run('../_tmp/output/bundle.js'), 42);
+			}
+		]);
 	});
 
 	it('skips filesystem writes when configured', async () => {
@@ -1191,18 +1256,18 @@ describe('rollup.watch', () => {
 			'BUNDLE_START',
 			'BUNDLE_END',
 			// 'END',
-			evt => {
+			event => {
 				assert.strictEqual(existsSync('../_tmp/output/bundle.js'), false);
 				assert.strictEqual(watchChangeCnt, 3);
 				// still aware of its output destination
-				assert.strictEqual(evt.output[0], resolve('test/_tmp/output/bundle.js'));
+				assert.strictEqual(event.output[0], resolve('test/_tmp/output/bundle.js'));
 			}
 		]);
 	});
 
 	it('rebuilds immediately by default', async () => {
 		await copy('test/watch/samples/basic', 'test/_tmp/input');
-		await wait(100);
+		await wait(300);
 		watcher = rollup.watch({
 			input: 'test/_tmp/input/main.js',
 			output: {
@@ -1326,7 +1391,9 @@ describe('rollup.watch', () => {
 			const transformFile = resolve('test/_tmp/input/transform');
 			const watchFiles = [buildStartFile, loadFile, resolveIdFile, transformFile];
 			await copy('test/watch/samples/basic', 'test/_tmp/input');
-			for (const file of watchFiles) writeFileSync(file, 'initial');
+
+			await Promise.all(watchFiles.map(file => writeFile(file, 'initial')));
+
 			watcher = rollup.watch({
 				input: 'test/_tmp/input/main.js',
 				output: {
@@ -1357,11 +1424,12 @@ describe('rollup.watch', () => {
 				'BUNDLE_START',
 				'BUNDLE_END',
 				'END',
-				() => {
+				async () => {
 					assert.strictEqual(run('../_tmp/output/bundle.js'), 42);
 					// sometimes the watcher is triggered during the initial run
 					watchChangeIds.clear();
-					for (const file_2 of watchFiles) writeFileSync(file_2, 'changed');
+
+					await Promise.all(watchFiles.map(file => writeFile(file, 'changed')));
 				},
 				'START',
 				'BUNDLE_START',
@@ -1588,7 +1656,7 @@ describe('rollup.watch', () => {
 
 		it('respects unlinked and re-added watched files', async () => {
 			await copy('test/watch/samples/basic', 'test/_tmp/input');
-			writeFileSync('test/_tmp/input/dep', '');
+			await writeFile('test/_tmp/input/dep', '');
 			watcher = rollup.watch({
 				input: 'test/_tmp/input/main.js',
 				output: {
@@ -1635,7 +1703,7 @@ describe('rollup.watch', () => {
 			let transformRuns = 0;
 			await copy('test/watch/samples/watch-files', 'test/_tmp/input');
 			await wait(100);
-			writeFileSync('test/_tmp/input/alsoWatched', 'initial');
+			await writeFile('test/_tmp/input/alsoWatched', 'initial');
 			watcher = rollup.watch({
 				input: 'test/_tmp/input/main.js',
 				output: {
@@ -1673,4 +1741,69 @@ describe('rollup.watch', () => {
 			]);
 		});
 	});
-}).timeout(20000);
+});
+
+function run(file) {
+	const resolved = require.resolve(file);
+	delete require.cache[resolved];
+	return require(resolved);
+}
+
+function sequence(watcher, events, timeout = 300) {
+	const handledEvents = [];
+	const sequencePromise = new Promise((fulfil, reject) => {
+		function go(event) {
+			const next = events.shift();
+			if (!next) {
+				handledEvents.push('DONE');
+				watcher.close();
+				fulfil();
+			} else if (typeof next === 'string') {
+				handledEvents.push(next);
+				const [eventCode, eventMessage] = next.split(':');
+				watcher.once('event', event => {
+					if (event.code !== eventCode) {
+						watcher.close();
+						if (event.code === 'ERROR') console.log(event.error);
+						reject(new Error(`Expected ${eventCode} event, got ${event.code}`));
+					} else if (
+						eventCode === 'ERROR' &&
+						eventMessage &&
+						event.error.message !== eventMessage
+					) {
+						reject(
+							new Error(`Expected to throw "${eventMessage}" but got "${event.error.message}".`)
+						);
+					} else {
+						go(event);
+					}
+				});
+			} else {
+				wait(timeout) // gah, this appears to be necessary to fix random errors
+					.then(() => {
+						handledEvents.push(`fn: ${JSON.stringify(event)}`);
+						next(event);
+						go();
+					})
+					.catch(error => {
+						watcher.close();
+						reject(error);
+					});
+			}
+		}
+
+		go();
+	});
+
+	return Promise.race([
+		sequencePromise.then(() => wait(100)),
+		wait(20_000).then(() => {
+			throw new Error(`Test timed out\n${handledEvents.join('\n')}`);
+		})
+	]);
+}
+
+function getTimeDiffInMs(previous) {
+	const [seconds, nanoseconds] = hrtime(previous);
+	return seconds * 1e3 + nanoseconds / 1e6;
+}

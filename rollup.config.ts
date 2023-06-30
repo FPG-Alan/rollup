@@ -1,45 +1,23 @@
-import { promises as fs } from 'fs';
-import { resolve } from 'path';
-import { env } from 'process';
+import { fileURLToPath } from 'node:url';
 import alias from '@rollup/plugin-alias';
 import commonjs from '@rollup/plugin-commonjs';
 import json from '@rollup/plugin-json';
 import { nodeResolve } from '@rollup/plugin-node-resolve';
+import replace from '@rollup/plugin-replace';
+import terser from '@rollup/plugin-terser';
 import typescript from '@rollup/plugin-typescript';
-import type { RollupOptions, WarningHandlerWithDefault } from 'rollup';
+import type { Plugin, RollupOptions, WarningHandlerWithDefault } from 'rollup';
 import { string } from 'rollup-plugin-string';
-import { terser } from 'rollup-plugin-terser';
 import addCliEntry from './build-plugins/add-cli-entry';
-import conditionalFsEventsImport from './build-plugins/conditional-fsevents-import';
+import { moduleAliases } from './build-plugins/aliases';
+import cleanBeforeWrite from './build-plugins/clean-before-write';
+import { copyBrowserTypes, copyNodeTypes } from './build-plugins/copy-types';
 import emitModulePackageFile from './build-plugins/emit-module-package-file';
 import esmDynamicImport from './build-plugins/esm-dynamic-import';
+import { fsEventsReplacement } from './build-plugins/fs-events-replacement';
 import getLicenseHandler from './build-plugins/generate-license-file';
+import getBanner from './build-plugins/get-banner';
 import replaceBrowserModules from './build-plugins/replace-browser-modules';
-import { version } from './package.json';
-
-async function getBanner(): Promise<string> {
-	let commitHash: string;
-
-	try {
-		commitHash = await fs.readFile('.commithash', 'utf8');
-	} catch {
-		commitHash = 'unknown';
-	}
-
-	const date = new Date(
-		env.SOURCE_DATE_EPOCH ? 1000 * +env.SOURCE_DATE_EPOCH : Date.now()
-	).toUTCString();
-
-	return `/*
-  @license
-	Rollup.js v${version}
-	${date} - commit ${commitHash}
-
-	https://github.com/rollup/rollup
-
-	Released under the MIT License.
-*/`;
-}
 
 const onwarn: WarningHandlerWithDefault = warning => {
 	// eslint-disable-next-line no-console
@@ -47,16 +25,8 @@ const onwarn: WarningHandlerWithDefault = warning => {
 		'Building Rollup produced warnings that need to be resolved. ' +
 			'Please keep in mind that the browser build may never have external dependencies!'
 	);
-	throw new Error(warning.message);
-};
-
-const moduleAliases = {
-	entries: {
-		acorn: resolve('node_modules/acorn/dist/acorn.mjs'),
-		'help.md': resolve('cli/help.md'),
-		'package.json': resolve('package.json')
-	},
-	resolve: ['.js', '.json', '.md']
+	// eslint-disable-next-line unicorn/error-message
+	throw Object.assign(new Error(), warning);
 };
 
 const treeshake = {
@@ -65,53 +35,55 @@ const treeshake = {
 	tryCatchDeoptimization: false
 };
 
-const nodePlugins = [
+const nodePlugins: readonly Plugin[] = [
+	replace(fsEventsReplacement),
 	alias(moduleAliases),
 	nodeResolve(),
 	json(),
-	conditionalFsEventsImport(),
 	string({ include: '**/*.md' }),
 	commonjs({
 		ignoreTryCatch: false,
 		include: 'node_modules/**'
 	}),
-	typescript()
+	typescript(),
+	cleanBeforeWrite('dist')
 ];
 
 export default async function (
 	command: Record<string, unknown>
 ): Promise<RollupOptions | RollupOptions[]> {
-	const banner = await getBanner();
-	const { collectLicenses, writeLicense } = getLicenseHandler();
+	const { collectLicenses, writeLicense } = getLicenseHandler(
+		fileURLToPath(new URL('.', import.meta.url))
+	);
 
 	const commonJSBuild: RollupOptions = {
 		// 'fsevents' is a dependency of 'chokidar' that cannot be bundled as it contains binary code
 		external: ['fsevents'],
 		input: {
+			'getLogFilter.js': 'src/utils/getLogFilter.ts',
 			'loadConfigFile.js': 'cli/run/loadConfigFile.ts',
 			'rollup.js': 'src/node-entry.ts'
 		},
 		onwarn,
 		output: {
-			banner,
+			banner: getBanner,
 			chunkFileNames: 'shared/[name].js',
 			dir: 'dist',
 			entryFileNames: '[name]',
-			// TODO Only loadConfigFile is using default exports mode; this should be changed in Rollup@3
-			exports: 'auto',
+			exports: 'named',
 			externalLiveBindings: false,
 			format: 'cjs',
 			freeze: false,
 			generatedCode: 'es2015',
 			interop: 'default',
-			manualChunks: { rollup: ['src/node-entry.ts'] },
 			sourcemap: true
 		},
 		plugins: [
 			...nodePlugins,
 			addCliEntry(),
 			esmDynamicImport(),
-			!command.configTest && collectLicenses()
+			!command.configTest && collectLicenses(),
+			!command.configTest && copyNodeTypes()
 		],
 		strictDeprecations: true,
 		treeshake
@@ -123,7 +95,10 @@ export default async function (
 
 	const esmBuild: RollupOptions = {
 		...commonJSBuild,
-		input: { 'rollup.js': 'src/node-entry.ts' },
+		input: {
+			'getLogFilter.js': 'src/utils/getLogFilter.ts',
+			'rollup.js': 'src/node-entry.ts'
+		},
 		output: {
 			...commonJSBuild.output,
 			dir: 'dist/es',
@@ -131,15 +106,30 @@ export default async function (
 			minifyInternalExports: false,
 			sourcemap: false
 		},
-		plugins: [...nodePlugins, emitModulePackageFile(), collectLicenses()]
+		plugins: [...nodePlugins, emitModulePackageFile(), collectLicenses(), writeLicense()]
 	};
+
+	const { collectLicenses: collectLicensesBrowser, writeLicense: writeLicenseBrowser } =
+		getLicenseHandler(fileURLToPath(new URL('browser', import.meta.url)));
 
 	const browserBuilds: RollupOptions = {
 		input: 'src/browser-entry.ts',
 		onwarn,
 		output: [
-			{ banner, file: 'dist/rollup.browser.js', format: 'umd', name: 'rollup', sourcemap: true },
-			{ banner, file: 'dist/es/rollup.browser.js', format: 'es' }
+			{
+				banner: getBanner,
+				file: 'browser/dist/rollup.browser.js',
+				format: 'umd',
+				name: 'rollup',
+				plugins: [copyBrowserTypes()],
+				sourcemap: true
+			},
+			{
+				banner: getBanner,
+				file: 'browser/dist/es/rollup.browser.js',
+				format: 'es',
+				plugins: [emitModulePackageFile()]
+			}
 		],
 		plugins: [
 			replaceBrowserModules(),
@@ -149,8 +139,18 @@ export default async function (
 			commonjs(),
 			typescript(),
 			terser({ module: true, output: { comments: 'some' } }),
-			collectLicenses(),
-			writeLicense()
+			collectLicensesBrowser(),
+			writeLicenseBrowser(),
+			cleanBeforeWrite('browser/dist'),
+			{
+				closeBundle() {
+					// On CI, macOS runs sometimes do not close properly. This is a hack
+					// to fix this until the problem is understood.
+					console.log('Force quit.');
+					setTimeout(() => process.exit(0));
+				},
+				name: 'force-close'
+			}
 		],
 		strictDeprecations: true,
 		treeshake

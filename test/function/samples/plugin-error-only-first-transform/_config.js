@@ -1,19 +1,19 @@
-const path = require('path');
+const path = require('node:path');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'throws error only with first plugin transform',
 	options: {
 		plugins: [
 			{
 				name: 'plugin1',
 				transform() {
-					throw Error('Something happened 1');
+					throw new Error('Something happened 1');
 				}
 			},
 			{
 				name: 'plugin2',
 				transform() {
-					throw Error('Something happened 2');
+					throw new Error('Something happened 2');
 				}
 			}
 		]
@@ -26,4 +26,4 @@ module.exports = {
 		id: path.join(__dirname, 'main.js'),
 		watchFiles: [path.join(__dirname, 'main.js')]
 	}
-};
+});

@@ -1,8 +1,8 @@
-const assert = require('assert');
-const path = require('path');
+const assert = require('node:assert');
+const path = require('node:path');
 const sideEffects = [];
 
-module.exports = {
+module.exports = defineTest({
 	description: 'supports setting module side effects to false for all modules',
 	context: {
 		require(id) {
@@ -37,4 +37,4 @@ module.exports = {
 			}
 		}
 	}
-};
+});

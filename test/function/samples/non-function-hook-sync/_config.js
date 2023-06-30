@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'throws when providing a value for a sync function hook',
 	options: {
 		plugins: {
@@ -6,10 +6,10 @@ module.exports = {
 		}
 	},
 	generateError: {
-		code: 'PLUGIN_ERROR',
+		code: 'INVALID_PLUGIN_HOOK',
 		hook: 'outputOptions',
-		message: 'Error running plugin hook outputOptions for at position 1, expected a function hook.',
-		plugin: 'at position 1',
-		pluginCode: 'INVALID_PLUGIN_HOOK'
+		message:
+			'Error running plugin hook "outputOptions" for plugin "at position 1", expected a function hook or an object with a "handler" function.',
+		plugin: 'at position 1'
 	}
-};
+});

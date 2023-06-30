@@ -1,9 +1,5 @@
 'use strict';
 
-Object.defineProperty(exports, '__esModule', { value: true });
+var name = 'name';
 
-var dep = require('./generated-dep.js');
-
-
-
-exports.name = dep.name;
+exports.name = name;

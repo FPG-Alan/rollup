@@ -1,10 +1,12 @@
-System.register(['./generated-dep2.js'], (function () {
+System.register([], (function (exports) {
 	'use strict';
 	return {
-		setters: [function () {}],
 		execute: (function () {
 
+			exports('f', foo);
 
+			function foo() {}
+			console.log('dep2');
 
 		})
 	};

@@ -1,6 +1,6 @@
-const path = require('path');
+const path = require('node:path');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'throws when adding watch files during generate',
 	options: {
 		plugins: {
@@ -13,8 +13,8 @@ module.exports = {
 	generateError: {
 		code: 'PLUGIN_ERROR',
 		hook: 'renderStart',
-		message: 'Cannot call addWatchFile after the build has finished.',
+		message: 'Cannot call "addWatchFile" after the build has finished.',
 		plugin: 'test-plugin',
 		pluginCode: 'INVALID_ROLLUP_PHASE'
 	}
-};
+});

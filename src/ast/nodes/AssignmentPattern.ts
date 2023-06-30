@@ -2,6 +2,7 @@ import type MagicString from 'magic-string';
 import { BLANK } from '../../utils/blank';
 import type { NodeRenderOptions, RenderOptions } from '../../utils/renderHelpers';
 import type { HasEffectsContext } from '../ExecutionContext';
+import type { NodeInteractionAssigned } from '../NodeInteractions';
 import { EMPTY_PATH, type ObjectPath, UNKNOWN_PATH } from '../utils/PathTracker';
 import type LocalVariable from '../variables/LocalVariable';
 import type Variable from '../variables/Variable';
@@ -14,7 +15,6 @@ export default class AssignmentPattern extends NodeBase implements PatternNode {
 	declare left: PatternNode;
 	declare right: ExpressionNode;
 	declare type: NodeType.tAssignmentPattern;
-	protected deoptimized = false;
 
 	addExportedVariables(
 		variables: readonly Variable[],
@@ -31,8 +31,14 @@ export default class AssignmentPattern extends NodeBase implements PatternNode {
 		path.length === 0 && this.left.deoptimizePath(path);
 	}
 
-	hasEffectsWhenAssignedAtPath(path: ObjectPath, context: HasEffectsContext): boolean {
-		return path.length > 0 || this.left.hasEffectsWhenAssignedAtPath(EMPTY_PATH, context);
+	hasEffectsOnInteractionAtPath(
+		path: ObjectPath,
+		interaction: NodeInteractionAssigned,
+		context: HasEffectsContext
+	): boolean {
+		return (
+			path.length > 0 || this.left.hasEffectsOnInteractionAtPath(EMPTY_PATH, interaction, context)
+		);
 	}
 
 	markDeclarationReached(): void {

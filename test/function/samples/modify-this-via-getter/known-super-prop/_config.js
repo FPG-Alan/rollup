@@ -1,4 +1,3 @@
-module.exports = {
-	description: 'handles getters that modify "this" on prototypes for known properties',
-	minNodeVersion: 12
-};
+module.exports = defineTest({
+	description: 'handles getters that modify "this" on prototypes for known properties'
+});

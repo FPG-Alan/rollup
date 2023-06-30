@@ -1,6 +1,6 @@
-const assert = require('assert');
+const assert = require('node:assert');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'accepts multiple transformer functions',
 	options: {
 		plugins: [
@@ -12,9 +12,7 @@ module.exports = {
 
 			{
 				transform(code) {
-					return code.replace(/\d+/g, match => {
-						return 2 * +match;
-					});
+					return code.replace(/\d+/g, match => 2 * +match);
 				}
 			}
 		]
@@ -22,4 +20,4 @@ module.exports = {
 	exports(exports) {
 		assert.equal(exports.magicNumber, 6);
 	}
-};
+});

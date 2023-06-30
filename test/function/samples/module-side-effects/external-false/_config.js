@@ -1,8 +1,10 @@
-const assert = require('assert');
-const path = require('path');
+const assert = require('node:assert');
+const path = require('node:path');
+const ID_MAIN = path.join(__dirname, 'main.js');
+
 const sideEffects = [];
 
-module.exports = {
+module.exports = defineTest({
 	description: 'supports setting module side effects to false for external modules',
 	context: {
 		require(id) {
@@ -45,11 +47,11 @@ module.exports = {
 	warnings: [
 		{
 			code: 'UNRESOLVED_IMPORT',
-			importer: 'main.js',
+			exporter: 'implicit-external',
+			id: ID_MAIN,
 			message:
-				"'implicit-external' is imported by main.js, but could not be resolved – treating it as an external dependency",
-			source: 'implicit-external',
-			url: 'https://rollupjs.org/guide/en/#warning-treating-module-as-external-dependency'
+				'"implicit-external" is imported by "main.js", but could not be resolved – treating it as an external dependency.',
+			url: 'https://rollupjs.org/troubleshooting/#warning-treating-module-as-external-dependency'
 		}
 	]
-};
+});

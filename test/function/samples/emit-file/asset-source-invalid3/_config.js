@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'throws when setting an empty asset source',
 	options: {
 		plugins: {
@@ -13,8 +13,8 @@ module.exports = {
 		code: 'PLUGIN_ERROR',
 		hook: 'buildStart',
 		message:
-			'Could not set source for asset "d59386e0", asset source needs to be a string, Uint8Array or Buffer.',
+			'Could not set source for asset "6b86b273", asset source needs to be a string, Uint8Array or Buffer.',
 		plugin: 'test-plugin',
 		pluginCode: 'VALIDATION_ERROR'
 	}
-};
+});

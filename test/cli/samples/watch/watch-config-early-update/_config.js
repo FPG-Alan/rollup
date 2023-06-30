@@ -1,11 +1,11 @@
-const { mkdirSync, unlinkSync } = require('fs');
-const path = require('path');
-const { writeAndSync, writeAndRetry } = require('../../../../utils');
+const { mkdirSync, unlinkSync } = require('node:fs');
+const path = require('node:path');
+const { wait, writeAndSync, writeAndRetry } = require('../../../../utils');
 
-const configFile = path.join(__dirname, 'rollup.config.js');
+const configFile = path.join(__dirname, 'rollup.config.mjs');
 let stopUpdate;
 
-module.exports = {
+module.exports = defineTest({
 	description: 'immediately reloads the config file if a change happens while it is parsed',
 	command: 'rollup -cw',
 	before() {
@@ -45,12 +45,14 @@ module.exports = {
 	},
 	after() {
 		unlinkSync(configFile);
+		stopUpdate();
 	},
 	abortOnStderr(data) {
 		if (data === 'initial\n') {
-			stopUpdate = writeAndRetry(
-				configFile,
-				`
+			wait(200).then(() => {
+				stopUpdate = writeAndRetry(
+					configFile,
+					`
 				console.error('updated');
 		    export default {
           input: 'main.js',
@@ -59,12 +61,13 @@ module.exports = {
 		        format: "es"
 		      }
 		    };`
-			);
+				);
+			});
 			return false;
 		}
-		if (data.includes(`created _actual${path.sep}output2.js`)) {
+		if (data.includes(`created _actual/output2.js`)) {
 			stopUpdate();
 			return true;
 		}
 	}
-};
+});

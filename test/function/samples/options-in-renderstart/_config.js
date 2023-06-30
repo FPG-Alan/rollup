@@ -1,7 +1,7 @@
-const assert = require('assert');
+const assert = require('node:assert');
 const checkedOptions = [];
 
-module.exports = {
+module.exports = defineTest({
 	description: 'makes input and output options available in renderStart',
 	options: {
 		context: 'global',
@@ -22,12 +22,12 @@ module.exports = {
 	},
 	exports: () => {
 		assert.deepStrictEqual(checkedOptions, [
-			'output-plugin',
+			'input-plugin',
 			'cjs',
 			'global',
-			'input-plugin',
+			'output-plugin',
 			'cjs',
 			'global'
 		]);
 	}
-};
+});

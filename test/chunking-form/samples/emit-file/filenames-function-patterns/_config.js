@@ -1,14 +1,15 @@
-const assert = require('assert');
-const path = require('path');
+const assert = require('node:assert');
+const path = require('node:path');
 
 const ID_MAIN = path.join(__dirname, 'main.js');
 const ID_DEB = path.join(__dirname, 'deb.js');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'supports using a function that returns a pattern for FileNames',
 	options: {
 		input: ['main.js'],
 		plugins: {
+			name: 'test-plugin',
 			transform() {
 				this.emitFile({ type: 'asset', name: 'test.txt', source: 'hello world' });
 				return null;
@@ -16,9 +17,6 @@ module.exports = {
 		},
 		output: {
 			entryFileNames: fileInfo => {
-				// This is checked separately as deepStrictEqual is having some issues
-				assert.deepStrictEqual(Object.keys(fileInfo.modules), [ID_MAIN]);
-				delete fileInfo.modules;
 				assert.deepStrictEqual(
 					fileInfo,
 					{
@@ -28,6 +26,7 @@ module.exports = {
 						isEntry: true,
 						isImplicitEntry: false,
 						name: 'main',
+						moduleIds: [ID_MAIN],
 						type: 'chunk'
 					},
 					'entry info'
@@ -47,9 +46,6 @@ module.exports = {
 				return '[ext]/[hash]-[name][extname]';
 			},
 			chunkFileNames: fileInfo => {
-				// This is checked separately as deepStrictEqual is having some issues
-				assert.deepStrictEqual(Object.keys(fileInfo.modules), [ID_DEB]);
-				delete fileInfo.modules;
 				assert.deepStrictEqual(
 					fileInfo,
 					{
@@ -58,6 +54,7 @@ module.exports = {
 						isDynamicEntry: true,
 						isEntry: false,
 						isImplicitEntry: false,
+						moduleIds: [ID_DEB],
 						name: 'deb',
 						type: 'chunk'
 					},
@@ -67,4 +64,4 @@ module.exports = {
 			}
 		}
 	}
-};
+});

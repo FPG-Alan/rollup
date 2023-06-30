@@ -1,18 +1,21 @@
-const path = require('path');
+const path = require('node:path');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'allows resolving an id with an object',
 	options: {
 		plugins: {
 			resolveId(importee) {
 				const fooId = path.join(__dirname, 'foo.js');
 				switch (importee) {
-					case 'internal1':
+					case 'internal1': {
 						return { id: fooId };
-					case 'internal2':
+					}
+					case 'internal2': {
 						return { id: fooId, external: false };
-					case 'external':
+					}
+					case 'external': {
 						return { id: 'my-external', external: true };
+					}
 				}
 			}
 		}
@@ -25,4 +28,4 @@ module.exports = {
 			throw new Error(`Unexpected external id ${id}.`);
 		}
 	}
-};
+});

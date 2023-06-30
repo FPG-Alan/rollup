@@ -1,11 +1,12 @@
-const assert = require('assert');
+const assert = require('node:assert');
 
-module.exports = {
+module.exports = defineTest({
 	description: 'allows external module to be configured (b)',
 	options: {
 		external: ['path']
 	},
 	exports() {
-		assert.equal(require('path').resolve.configured, 'yes');
+		// @ts-expect-error missing types
+		assert.equal(require('node:path').resolve.configured, 'yes');
 	}
-};
+});

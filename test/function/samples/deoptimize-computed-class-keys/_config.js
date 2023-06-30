@@ -1,4 +1,3 @@
-module.exports = {
-	description: 'deoptimizes computed class property keys',
-	minNodeVersion: 12
-};
+module.exports = defineTest({
+	description: 'deoptimizes computed class property keys'
+});

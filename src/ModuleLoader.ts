@@ -1,4 +1,4 @@
-import * as acorn from 'acorn';
+import type * as acorn from 'acorn';
 import ExternalModule from './ExternalModule';
 import type Graph from './Graph';
 import Module, { type DynamicImport } from './Module';
@@ -16,25 +16,26 @@ import type {
 	ResolveIdResult
 } from './rollup/types';
 import type { PluginDriver } from './utils/PluginDriver';
-import Queue from './utils/Queue';
 import { EMPTY_OBJECT } from './utils/blank';
+import { readFile } from './utils/fs';
+import { LOGLEVEL_WARN } from './utils/logging';
 import {
-	errBadLoader,
-	errEntryCannotBeExternal,
-	errExternalSyntheticExports,
-	errImplicitDependantCannotBeExternal,
-	errInternalIdCannotBeExternal,
 	error,
-	errUnresolvedEntry,
-	errUnresolvedImplicitDependant,
-	errUnresolvedImport,
-	errUnresolvedImportTreatedAsExternal
-} from './utils/error';
-import { promises as fs } from './utils/fs';
+	logBadLoader,
+	logEntryCannotBeExternal,
+	logExternalSyntheticExports,
+	logImplicitDependantCannotBeExternal,
+	logInconsistentImportAssertions,
+	logInternalIdCannotBeExternal,
+	logUnresolvedEntry,
+	logUnresolvedImplicitDependant,
+	logUnresolvedImport,
+	logUnresolvedImportTreatedAsExternal
+} from './utils/logs';
+import { doAssertionsDiffer, getAssertionsFromImportExpression } from './utils/parseAssertions';
 import { isAbsolute, isRelative, resolve } from './utils/path';
 import relativeId from './utils/relativeId';
 import { resolveId } from './utils/resolveId';
-import { timeEnd, timeStart } from './utils/timers';
 import transform from './utils/transform';
 
 export interface UnresolvedModule {
@@ -44,14 +45,24 @@ export interface UnresolvedModule {
 	name: string | null;
 }
 
+export type ModuleLoaderResolveId = (
+	source: string,
+	importer: string | undefined,
+	customOptions: CustomPluginOptions | undefined,
+	isEntry: boolean | undefined,
+	assertions: Record<string, string>,
+	skip?: readonly { importer: string | undefined; plugin: Plugin; source: string }[] | null
+) => Promise<ResolvedId | null>;
+
 type NormalizedResolveIdWithoutDefaults = Partial<PartialNull<ModuleOptions>> & {
 	external?: boolean | 'absolute';
 	id: string;
+	resolvedBy?: string;
 };
 
-type ResolveStaticDependencyPromise = Promise<[source: string, resolvedId: ResolvedId]>;
+type ResolveStaticDependencyPromise = Promise<readonly [source: string, resolvedId: ResolvedId]>;
 type ResolveDynamicDependencyPromise = Promise<
-	[dynamicImport: DynamicImport, resolvedId: ResolvedId | string | null]
+	readonly [dynamicImport: DynamicImport, resolvedId: ResolvedId | string | null]
 >;
 type LoadModulePromise = Promise<
 	[
@@ -72,7 +83,6 @@ export class ModuleLoader {
 	private readonly modulesWithLoadedDependencies = new Set<Module>();
 	private nextChunkNamePriority = 0;
 	private nextEntryModuleIndex = 0;
-	private readonly readQueue: Queue<LoadResult>;
 
 	constructor(
 		private readonly graph: Graph,
@@ -83,8 +93,6 @@ export class ModuleLoader {
 		this.hasModuleSideEffects = options.treeshake
 			? options.treeshake.moduleSideEffects
 			: () => true;
-
-		this.readQueue = new Queue(options.maxParallelFileReads);
 	}
 
 	async addAdditionalModules(unresolvedModules: readonly string[]): Promise<Module[]> {
@@ -124,8 +132,7 @@ export class ModuleLoader {
 					this.loadEntryModule(id, true, importer, null)
 				)
 			).then(entryModules => {
-				for (let index = 0; index < entryModules.length; index++) {
-					const entryModule = entryModules[index];
+				for (const [index, entryModule] of entryModules.entries()) {
 					entryModule.isUserDefinedEntryPoint =
 						entryModule.isUserDefinedEntryPoint || isUserDefined;
 					addChunkNamesToModule(
@@ -137,16 +144,16 @@ export class ModuleLoader {
 					const existingIndexedModule = this.indexedEntryModules.find(
 						indexedModule => indexedModule.module === entryModule
 					);
-					if (!existingIndexedModule) {
-						this.indexedEntryModules.push({
-							index: firstEntryModuleIndex + index,
-							module: entryModule
-						});
-					} else {
+					if (existingIndexedModule) {
 						existingIndexedModule.index = Math.min(
 							existingIndexedModule.index,
 							firstEntryModuleIndex + index
 						);
+					} else {
+						this.indexedEntryModules.push({
+							index: firstEntryModuleIndex + index,
+							module: entryModule
+						});
 					}
 				}
 				this.indexedEntryModules.sort(({ index: indexA }, { index: indexB }) =>
@@ -190,7 +197,7 @@ export class ModuleLoader {
 		resolvedId: { id: string; resolveDependencies?: boolean } & Partial<PartialNull<ModuleOptions>>
 	): Promise<ModuleInfo> {
 		const module = await this.fetchModule(
-			this.getResolvedIdWithDefaults(resolvedId)!,
+			this.getResolvedIdWithDefaults(resolvedId, EMPTY_OBJECT)!,
 			undefined,
 			false,
 			resolvedId.resolveDependencies ? RESOLVE_DEPENDENCIES : true
@@ -198,14 +205,15 @@ export class ModuleLoader {
 		return module.info;
 	}
 
-	resolveId = async (
-		source: string,
-		importer: string | undefined,
-		customOptions: CustomPluginOptions | undefined,
-		isEntry: boolean | undefined,
-		skip: readonly { importer: string | undefined; plugin: Plugin; source: string }[] | null = null
-	): Promise<ResolvedId | null> => {
-		return this.getResolvedIdWithDefaults(
+	resolveId: ModuleLoaderResolveId = async (
+		source,
+		importer,
+		customOptions,
+		isEntry,
+		assertions,
+		skip = null
+	) =>
+		this.getResolvedIdWithDefaults(
 			this.getNormalizedResolvedIdWithoutDefaults(
 				this.options.external(source, importer, false)
 					? false
@@ -217,14 +225,14 @@ export class ModuleLoader {
 							this.resolveId,
 							skip,
 							customOptions,
-							typeof isEntry === 'boolean' ? isEntry : !importer
+							typeof isEntry === 'boolean' ? isEntry : !importer,
+							assertions
 					  ),
-
 				importer,
 				source
-			)
+			),
+			assertions
 		);
-	};
 
 	private addEntryWithImplicitDependants(
 		unresolvedModule: UnresolvedModule,
@@ -262,30 +270,27 @@ export class ModuleLoader {
 		importer: string | undefined,
 		module: Module
 	): Promise<void> {
-		timeStart('load modules', 3);
 		let source: LoadResult;
 		try {
-			source = await this.readQueue.run(
+			source = await this.graph.fileOperationQueue.run(
+				// 可以通过pluginDriver.hookFirst('load', [id])来修改加载的内容
+				// 如果hook不返回， 就直接读取文件内容
 				async () =>
-					// 可以通过pluginDriver.hookFirst('load', [id])来修改加载的内容
-					// 如果hook不返回， 就直接读取文件内容
-					(await this.pluginDriver.hookFirst('load', [id])) ?? (await fs.readFile(id, 'utf8'))
+					(await this.pluginDriver.hookFirst('load', [id])) ?? (await readFile(id, 'utf8'))
 			);
-		} catch (err: any) {
-			timeEnd('load modules', 3);
-			let msg = `Could not load ${id}`;
-			if (importer) msg += ` (imported by ${relativeId(importer)})`;
-			msg += `: ${err.message}`;
-			err.message = msg;
-			throw err;
+		} catch (error_: any) {
+			let message = `Could not load ${id}`;
+			if (importer) message += ` (imported by ${relativeId(importer)})`;
+			message += `: ${error_.message}`;
+			error_.message = message;
+			throw error_;
 		}
-		timeEnd('load modules', 3);
 		const sourceDescription =
 			typeof source === 'string'
 				? { code: source }
 				: source != null && typeof source === 'object' && typeof source.code === 'string'
 				? source
-				: error(errBadLoader(id));
+				: error(logBadLoader(id));
 		const cachedModule = this.graph.cachedModules.get(id);
 
 		// 如果有缓存， 并且没有自定义的transformCache， 并且没有修改过， 就直接使用缓存
@@ -300,6 +305,7 @@ export class ModuleLoader {
 					id: cachedModule.id,
 					meta: cachedModule.meta,
 					moduleSideEffects: cachedModule.moduleSideEffects,
+					resolvedSources: cachedModule.resolvedIds,
 					syntheticNamedExports: cachedModule.syntheticNamedExports
 				}
 			]))
@@ -315,7 +321,7 @@ export class ModuleLoader {
 			module.updateOptions(sourceDescription);
 			module.setSource(
 				// 处理transform钩子
-				await transform(sourceDescription, module, this.pluginDriver, this.options.onwarn)
+				await transform(sourceDescription, module, this.pluginDriver, this.options.onLog)
 			);
 		}
 	}
@@ -367,17 +373,25 @@ export class ModuleLoader {
 		}
 	}
 
-	// If this is a preload, then this method always waits for the dependencies of the module to be resolved.
-	// Otherwise if the module does not exist, it waits for the module and all its dependencies to be loaded.
-	// Otherwise it returns immediately.
+	// If this is a preload, then this method always waits for the dependencies of
+	// the module to be resolved.
+	// Otherwise, if the module does not exist, it waits for the module and all
+	// its dependencies to be loaded.
+	// Otherwise, it returns immediately.
 	private async fetchModule(
-		{ id, meta, moduleSideEffects, syntheticNamedExports }: ResolvedId,
+		{ assertions, id, meta, moduleSideEffects, syntheticNamedExports }: ResolvedId,
 		importer: string | undefined,
 		isEntry: boolean,
 		isPreload: PreloadType
 	): Promise<Module> {
 		const existingModule = this.modulesById.get(id);
 		if (existingModule instanceof Module) {
+			if (importer && doAssertionsDiffer(assertions, existingModule.info.assertions)) {
+				this.options.onLog(
+					LOGLEVEL_WARN,
+					logInconsistentImportAssertions(existingModule.info.assertions, assertions, id, importer)
+				);
+			}
 			await this.handleExistingModule(existingModule, isEntry, isPreload);
 			return existingModule;
 		}
@@ -390,7 +404,8 @@ export class ModuleLoader {
 			isEntry,
 			moduleSideEffects,
 			syntheticNamedExports,
-			meta
+			meta,
+			assertions
 		);
 		// 记入缓存
 		this.modulesById.set(id, module);
@@ -465,28 +480,34 @@ export class ModuleLoader {
 		resolvedId: ResolvedId
 	): Promise<Module | ExternalModule> {
 		if (resolvedId.external) {
-			const { external, id, moduleSideEffects, meta } = resolvedId;
-			if (!this.modulesById.has(id)) {
-				this.modulesById.set(
+			const { assertions, external, id, moduleSideEffects, meta } = resolvedId;
+			let externalModule = this.modulesById.get(id);
+			if (!externalModule) {
+				externalModule = new ExternalModule(
+					this.options,
 					id,
-					new ExternalModule(
-						this.options,
-						id,
-						moduleSideEffects,
-						meta,
-						external !== 'absolute' && isAbsolute(id)
+					moduleSideEffects,
+					meta,
+					external !== 'absolute' && isAbsolute(id),
+					assertions
+				);
+				this.modulesById.set(id, externalModule);
+			} else if (!(externalModule instanceof ExternalModule)) {
+				return error(logInternalIdCannotBeExternal(source, importer));
+			} else if (doAssertionsDiffer(externalModule.info.assertions, assertions)) {
+				this.options.onLog(
+					LOGLEVEL_WARN,
+					logInconsistentImportAssertions(
+						externalModule.info.assertions,
+						assertions,
+						source,
+						importer
 					)
 				);
 			}
-
-			const externalModule = this.modulesById.get(id);
-			if (!(externalModule instanceof ExternalModule)) {
-				return error(errInternalIdCannotBeExternal(source, importer));
-			}
 			return Promise.resolve(externalModule);
-		} else {
-			return this.fetchModule(resolvedId, importer, false, false);
 		}
+		return this.fetchModule(resolvedId, importer, false, false);
 	}
 
 	private async fetchStaticDependencies(
@@ -565,51 +586,55 @@ export class ModuleLoader {
 				module,
 				typeof dynamicImport.argument === 'string'
 					? dynamicImport.argument
-					: dynamicImport.argument.esTreeNode,
-				module.id
+					: dynamicImport.argument.esTreeNode!,
+				module.id,
+				getAssertionsFromImportExpression(dynamicImport.node)
 			);
 			if (resolvedId && typeof resolvedId === 'object') {
 				dynamicImport.id = resolvedId.id;
 			}
-			return [dynamicImport, resolvedId] as [DynamicImport, ResolvedId | string | null];
+			return [dynamicImport, resolvedId] as const;
 		});
 	}
 
 	// 返回一组promise, 这个promise arr执行之后, 返回一个二维数组, 每个元素是一个二元数组, 第一个元素是source, 第二个元素是resolvedId
 	private getResolveStaticDependencyPromises(module: Module): ResolveStaticDependencyPromise[] {
+		// eslint-disable-next-line unicorn/prefer-spread
 		return Array.from(
-			// module.sources是在ast节点解析时, 遇到 ImportDeclaration 节点时通过调用module.addImport添加的
+			// module.sourcesWithAssertions是在ast节点解析时, 遇到 ImportDeclaration 节点时通过调用module.addImport添加的
 			// 或者re exoprt时也会添加
-			// 是一个string set, 存放导入的文件路径
-
-			module.sources,
-			async source =>
+			module.sourcesWithAssertions,
+			async ([source, assertions]) =>
 				[
 					source,
 					(module.resolvedIds[source] =
 						module.resolvedIds[source] ||
-						this.handleResolveId(
-							await this.resolveId(source, module.id, EMPTY_OBJECT, false),
+						this.handleInvalidResolvedId(
+							await this.resolveId(source, module.id, EMPTY_OBJECT, false, assertions),
 							source,
-							module.id
+							module.id,
+							assertions
 						))
-				] as [string, ResolvedId]
+				] as const
 		);
 	}
 
 	private getResolvedIdWithDefaults(
-		resolvedId: NormalizedResolveIdWithoutDefaults | null
+		resolvedId: NormalizedResolveIdWithoutDefaults | null,
+		assertions: Record<string, string>
 	): ResolvedId | null {
 		if (!resolvedId) {
 			return null;
 		}
 		const external = resolvedId.external || false;
 		return {
+			assertions: resolvedId.assertions || assertions,
 			external,
 			id: resolvedId.id,
 			meta: resolvedId.meta || {},
 			moduleSideEffects:
 				resolvedId.moduleSideEffects ?? this.hasModuleSideEffects(resolvedId.id, !!external),
+			resolvedBy: resolvedId.resolvedBy ?? 'rollup',
 			syntheticNamedExports: resolvedId.syntheticNamedExports ?? false
 		};
 	}
@@ -632,25 +657,28 @@ export class ModuleLoader {
 		return this.fetchModuleDependencies(module, ...(await loadPromise));
 	}
 
-	private handleResolveId(
+	private handleInvalidResolvedId(
 		resolvedId: ResolvedId | null,
 		source: string,
-		importer: string
+		importer: string,
+		assertions: Record<string, string>
 	): ResolvedId {
 		if (resolvedId === null) {
 			if (isRelative(source)) {
-				return error(errUnresolvedImport(source, importer));
+				return error(logUnresolvedImport(source, importer));
 			}
-			this.options.onwarn(errUnresolvedImportTreatedAsExternal(source, importer));
+			this.options.onLog(LOGLEVEL_WARN, logUnresolvedImportTreatedAsExternal(source, importer));
 			return {
+				assertions,
 				external: true,
 				id: source,
 				meta: {},
 				moduleSideEffects: this.hasModuleSideEffects(source, true),
+				resolvedBy: 'rollup',
 				syntheticNamedExports: false
 			};
 		} else if (resolvedId.external && resolvedId.syntheticNamedExports) {
-			this.options.onwarn(errExternalSyntheticExports(source, importer));
+			this.options.onLog(LOGLEVEL_WARN, logExternalSyntheticExports(source, importer));
 		}
 		return resolvedId;
 	}
@@ -672,14 +700,15 @@ export class ModuleLoader {
 			this.resolveId,
 			null,
 			EMPTY_OBJECT,
-			true
+			true,
+			EMPTY_OBJECT
 		);
 
 		if (resolveIdResult == null) {
 			return error(
 				implicitlyLoadedBefore === null
-					? errUnresolvedEntry(unresolvedId)
-					: errUnresolvedImplicitDependant(unresolvedId, implicitlyLoadedBefore)
+					? logUnresolvedEntry(unresolvedId)
+					: logUnresolvedImplicitDependant(unresolvedId, implicitlyLoadedBefore)
 			);
 		}
 		if (
@@ -688,8 +717,8 @@ export class ModuleLoader {
 		) {
 			return error(
 				implicitlyLoadedBefore === null
-					? errEntryCannotBeExternal(unresolvedId)
-					: errImplicitDependantCannotBeExternal(unresolvedId, implicitlyLoadedBefore)
+					? logEntryCannotBeExternal(unresolvedId)
+					: logImplicitDependantCannotBeExternal(unresolvedId, implicitlyLoadedBefore)
 			);
 		}
 
@@ -700,7 +729,8 @@ export class ModuleLoader {
 			this.getResolvedIdWithDefaults(
 				typeof resolveIdResult === 'object'
 					? (resolveIdResult as NormalizedResolveIdWithoutDefaults)
-					: { id: resolveIdResult }
+					: { id: resolveIdResult },
+				EMPTY_OBJECT
 			)!,
 			undefined,
 			isEntry,
@@ -711,11 +741,13 @@ export class ModuleLoader {
 	private async resolveDynamicImport(
 		module: Module,
 		specifier: string | acorn.Node,
-		importer: string
+		importer: string,
+		assertions: Record<string, string>
 	): Promise<ResolvedId | string | null> {
 		const resolution = await this.pluginDriver.hookFirst('resolveDynamicImport', [
 			specifier,
-			importer
+			importer,
+			{ assertions }
 		]);
 		if (typeof specifier !== 'string') {
 			if (typeof resolution === 'string') {
@@ -724,27 +756,42 @@ export class ModuleLoader {
 			if (!resolution) {
 				return null;
 			}
-			return {
-				external: false,
-				moduleSideEffects: true,
-				...resolution
-			} as ResolvedId;
+			return this.getResolvedIdWithDefaults(
+				resolution as NormalizedResolveIdWithoutDefaults,
+				assertions
+			);
 		}
 		if (resolution == null) {
-			return (module.resolvedIds[specifier] =
-				module.resolvedIds[specifier] ||
-				this.handleResolveId(
-					await this.resolveId(specifier, module.id, EMPTY_OBJECT, false),
-					specifier,
-					module.id
-				));
+			const existingResolution = module.resolvedIds[specifier];
+			if (existingResolution) {
+				if (doAssertionsDiffer(existingResolution.assertions, assertions)) {
+					this.options.onLog(
+						LOGLEVEL_WARN,
+						logInconsistentImportAssertions(
+							existingResolution.assertions,
+							assertions,
+							specifier,
+							importer
+						)
+					);
+				}
+				return existingResolution;
+			}
+			return (module.resolvedIds[specifier] = this.handleInvalidResolvedId(
+				await this.resolveId(specifier, module.id, EMPTY_OBJECT, false, assertions),
+				specifier,
+				module.id,
+				assertions
+			));
 		}
-		return this.handleResolveId(
+		return this.handleInvalidResolvedId(
 			this.getResolvedIdWithDefaults(
-				this.getNormalizedResolvedIdWithoutDefaults(resolution, importer, specifier)
+				this.getNormalizedResolvedIdWithoutDefaults(resolution, importer, specifier),
+				assertions
 			),
 			specifier,
-			importer
+			importer,
+			assertions
 		);
 	}
 }

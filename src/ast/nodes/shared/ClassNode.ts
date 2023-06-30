@@ -1,7 +1,7 @@
-import type { CallOptions } from '../../CallOptions';
 import type { DeoptimizableEntity } from '../../DeoptimizableEntity';
 import type { HasEffectsContext, InclusionContext } from '../../ExecutionContext';
-import type { NodeEvent } from '../../NodeEvents';
+import type { NodeInteraction, NodeInteractionCalled } from '../../NodeInteractions';
+import { INTERACTION_CALLED } from '../../NodeInteractions';
 import ChildScope from '../../scopes/ChildScope';
 import type Scope from '../../scopes/Scope';
 import {
@@ -9,13 +9,14 @@ import {
 	type ObjectPath,
 	type PathTracker,
 	SHARED_RECURSION_TRACKER,
+	UNKNOWN_PATH,
 	UnknownKey
 } from '../../utils/PathTracker';
 import type ClassBody from '../ClassBody';
 import Identifier from '../Identifier';
 import type Literal from '../Literal';
 import MethodDefinition from '../MethodDefinition';
-import { type ExpressionEntity, type LiteralValueOrUnknown, UnknownValue } from './Expression';
+import { type ExpressionEntity, type LiteralValueOrUnknown } from './Expression';
 import { type ExpressionNode, type IncludeChildren, NodeBase } from './Node';
 import { ObjectEntity, type ObjectProperty } from './ObjectEntity';
 import { ObjectMember } from './ObjectMember';
@@ -32,26 +33,24 @@ export default class ClassNode extends NodeBase implements DeoptimizableEntity {
 		this.scope = new ChildScope(parentScope);
 	}
 
+	deoptimizeArgumentsOnInteractionAtPath(
+		interaction: NodeInteraction,
+		path: ObjectPath,
+		recursionTracker: PathTracker
+	): void {
+		this.getObjectEntity().deoptimizeArgumentsOnInteractionAtPath(
+			interaction,
+			path,
+			recursionTracker
+		);
+	}
+
 	deoptimizeCache(): void {
 		this.getObjectEntity().deoptimizeAllProperties();
 	}
 
 	deoptimizePath(path: ObjectPath): void {
 		this.getObjectEntity().deoptimizePath(path);
-	}
-
-	deoptimizeThisOnEventAtPath(
-		event: NodeEvent,
-		path: ObjectPath,
-		thisParameter: ExpressionEntity,
-		recursionTracker: PathTracker
-	): void {
-		this.getObjectEntity().deoptimizeThisOnEventAtPath(
-			event,
-			path,
-			thisParameter,
-			recursionTracker
-		);
 	}
 
 	getLiteralValueAtPath(
@@ -64,51 +63,41 @@ export default class ClassNode extends NodeBase implements DeoptimizableEntity {
 
 	getReturnExpressionWhenCalledAtPath(
 		path: ObjectPath,
-		callOptions: CallOptions,
+		interaction: NodeInteractionCalled,
 		recursionTracker: PathTracker,
 		origin: DeoptimizableEntity
-	): ExpressionEntity {
+	): [expression: ExpressionEntity, isPure: boolean] {
 		return this.getObjectEntity().getReturnExpressionWhenCalledAtPath(
 			path,
-			callOptions,
+			interaction,
 			recursionTracker,
 			origin
 		);
 	}
 
 	hasEffects(context: HasEffectsContext): boolean {
+		if (!this.deoptimized) this.applyDeoptimizations();
 		const initEffect = this.superClass?.hasEffects(context) || this.body.hasEffects(context);
 		this.id?.markDeclarationReached();
 		return initEffect || super.hasEffects(context);
 	}
 
-	hasEffectsWhenAccessedAtPath(path: ObjectPath, context: HasEffectsContext): boolean {
-		return this.getObjectEntity().hasEffectsWhenAccessedAtPath(path, context);
-	}
-
-	hasEffectsWhenAssignedAtPath(path: ObjectPath, context: HasEffectsContext): boolean {
-		return this.getObjectEntity().hasEffectsWhenAssignedAtPath(path, context);
-	}
-
-	hasEffectsWhenCalledAtPath(
+	hasEffectsOnInteractionAtPath(
 		path: ObjectPath,
-		callOptions: CallOptions,
+		interaction: NodeInteraction,
 		context: HasEffectsContext
 	): boolean {
-		if (path.length === 0) {
-			return (
-				!callOptions.withNew ||
-				(this.classConstructor !== null
-					? this.classConstructor.hasEffectsWhenCalledAtPath(EMPTY_PATH, callOptions, context)
-					: this.superClass !== null &&
-					  this.superClass.hasEffectsWhenCalledAtPath(path, callOptions, context))
-			);
-		} else {
-			return this.getObjectEntity().hasEffectsWhenCalledAtPath(path, callOptions, context);
-		}
+		return interaction.type === INTERACTION_CALLED && path.length === 0
+			? !interaction.withNew ||
+					(this.classConstructor === null
+						? this.superClass?.hasEffectsOnInteractionAtPath(path, interaction, context)
+						: this.classConstructor.hasEffectsOnInteractionAtPath(path, interaction, context)) ||
+					false
+			: this.getObjectEntity().hasEffectsOnInteractionAtPath(path, interaction, context);
 	}
 
 	include(context: InclusionContext, includeChildrenRecursively: IncludeChildren): void {
+		if (!this.deoptimized) this.applyDeoptimizations();
 		this.included = true;
 		this.superClass?.include(context, includeChildrenRecursively);
 		this.body.include(context, includeChildrenRecursively);
@@ -127,6 +116,22 @@ export default class ClassNode extends NodeBase implements DeoptimizableEntity {
 			}
 		}
 		this.classConstructor = null;
+	}
+
+	protected applyDeoptimizations(): void {
+		this.deoptimized = true;
+		for (const definition of this.body.body) {
+			if (
+				!(
+					definition.static ||
+					(definition instanceof MethodDefinition && definition.kind === 'constructor')
+				)
+			) {
+				// Calls to methods are not tracked, ensure that the return value is deoptimized
+				definition.deoptimizePath(UNKNOWN_PATH);
+			}
+		}
+		this.context.requestTreeshakingPass();
 	}
 
 	private getObjectEntity(): ObjectEntity {
@@ -148,7 +153,7 @@ export default class ClassNode extends NodeBase implements DeoptimizableEntity {
 					SHARED_RECURSION_TRACKER,
 					this
 				);
-				if (keyValue === UnknownValue) {
+				if (typeof keyValue === 'symbol') {
 					properties.push({ key: UnknownKey, kind, property: definition });
 					continue;
 				} else {

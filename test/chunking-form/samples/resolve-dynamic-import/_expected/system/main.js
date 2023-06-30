@@ -1,7 +1,7 @@
 System.register(['./direct-relative-external', 'to-indirect-relative-external', 'direct-absolute-external', 'to-indirect-absolute-external'], (function (exports, module) {
 	'use strict';
 	return {
-		setters: [function () {}, function () {}, function () {}, function () {}],
+		setters: [null, null, null, null],
 		execute: (function () {
 
 			// nested
@@ -11,12 +11,10 @@ System.register(['./direct-relative-external', 'to-indirect-relative-external', 
 			module.import('direct-absolute-external');
 			module.import('to-indirect-absolute-external');
 
-			const value = 'existing';
 			console.log('existing');
 
 			var existing = /*#__PURE__*/Object.freeze({
-				__proto__: null,
-				value: value
+				__proto__: null
 			});
 
 			//main

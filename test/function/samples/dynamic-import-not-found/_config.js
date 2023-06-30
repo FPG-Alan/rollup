@@ -1,4 +1,7 @@
-module.exports = {
+const path = require('node:path');
+const ID_MAIN = path.join(__dirname, 'main.js');
+
+module.exports = defineTest({
 	description: 'warns if a dynamic import is not found',
 	context: {
 		require(id) {
@@ -10,11 +13,11 @@ module.exports = {
 	warnings: [
 		{
 			code: 'UNRESOLVED_IMPORT',
-			importer: 'main.js',
+			exporter: 'mod',
+			id: ID_MAIN,
 			message:
-				"'mod' is imported by main.js, but could not be resolved – treating it as an external dependency",
-			source: 'mod',
-			url: 'https://rollupjs.org/guide/en/#warning-treating-module-as-external-dependency'
+				'"mod" is imported by "main.js", but could not be resolved – treating it as an external dependency.',
+			url: 'https://rollupjs.org/troubleshooting/#warning-treating-module-as-external-dependency'
 		}
 	]
-};
+});

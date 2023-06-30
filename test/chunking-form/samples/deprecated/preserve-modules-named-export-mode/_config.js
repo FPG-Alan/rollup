@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'respects "named" export mode in all chunks when preserving modules',
 	options: {
 		strictDeprecations: false,
@@ -7,5 +7,6 @@ module.exports = {
 		output: {
 			exports: 'named'
 		}
-	}
-};
+	},
+	expectedWarnings: ['DEPRECATED_FEATURE']
+});

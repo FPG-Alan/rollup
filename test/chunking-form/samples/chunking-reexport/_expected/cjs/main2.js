@@ -1,8 +1,6 @@
 'use strict';
 
-Object.defineProperty(exports, '__esModule', { value: true });
-
-require('./generated-dep.js');
+require('./main1.js');
 var external = require('external');
 
 

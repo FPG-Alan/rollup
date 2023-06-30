@@ -1,21 +1,25 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'adds Symbol.toStringTag property to external namespaces',
 	options: {
 		external(id) {
 			return id.startsWith('external');
 		},
 		output: {
-			namespaceToStringTag: true,
+			generatedCode: { symbols: true },
 			interop(id) {
 				switch (id) {
-					case 'external-auto':
+					case 'external-auto': {
 						return 'auto';
-					case 'external-default':
+					}
+					case 'external-default': {
 						return 'default';
-					case 'external-defaultOnly':
+					}
+					case 'external-defaultOnly': {
 						return 'defaultOnly';
-					default:
+					}
+					default: {
 						throw new Error(`Unexpected require "${id}"`);
+					}
 				}
 			}
 		}
@@ -25,4 +29,4 @@ module.exports = {
 			return { foo: 42 };
 		}
 	}
-};
+});

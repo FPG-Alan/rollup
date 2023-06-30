@@ -1,9 +1,7 @@
-define(['exports', './generated-dep'], (function (exports, dep) { 'use strict';
+define(['exports', './main1'], (function (exports, main1_js) { 'use strict';
 
 
 
-	exports.name = dep.name;
-
-	Object.defineProperty(exports, '__esModule', { value: true });
+	exports.name = main1_js.name;
 
 }));

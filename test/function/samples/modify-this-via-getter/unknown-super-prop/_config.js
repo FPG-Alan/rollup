@@ -1,12 +1,11 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'handles getters that modify "this" on prototypes for unknown properties',
-	minNodeVersion: 12,
 	context: {
-		require(id) {
+		require() {
 			return { unknown: 'prop' };
 		}
 	},
 	options: {
 		external: ['external']
 	}
-};
+});

@@ -1,22 +1,21 @@
+import { env } from 'node:process';
 import type { MergedRollupOptions } from '../../src/rollup/types';
+import { logDuplicateImportOptions, logFailAfterWarnings } from '../../src/utils/logs';
 import { isWatchEnabled } from '../../src/utils/options/mergeOptions';
 import { getAliasName } from '../../src/utils/relativeId';
 import { loadFsEvents } from '../../src/watch/fsevents-importer';
 import { handleError } from '../logging';
-import type { BatchWarnings } from './batchWarnings';
 import build from './build';
 import { getConfigPath } from './getConfigPath';
-import loadAndParseConfigFile from './loadConfigFile';
+import { loadConfigFile } from './loadConfigFile';
+import type { BatchWarnings } from './loadConfigFileType';
 import loadConfigFromCommand from './loadConfigFromCommand';
 
 export default async function runRollup(command: Record<string, any>): Promise<void> {
 	let inputSource;
 	if (command._.length > 0) {
 		if (command.input) {
-			handleError({
-				code: 'DUPLICATE_IMPORT_OPTIONS',
-				message: 'Either use --input, or pass input path as argument'
-			});
+			handleError(logDuplicateImportOptions());
 		}
 		inputSource = command._;
 	} else if (typeof command.input === 'string') {
@@ -26,15 +25,15 @@ export default async function runRollup(command: Record<string, any>): Promise<v
 	}
 
 	if (inputSource && inputSource.length > 0) {
-		if (inputSource.some((input: string) => input.indexOf('=') !== -1)) {
+		if (inputSource.some((input: string) => input.includes('='))) {
 			command.input = {};
-			inputSource.forEach((input: string) => {
+			for (const input of inputSource) {
 				const equalsIndex = input.indexOf('=');
-				const value = input.substr(equalsIndex + 1);
-				let key = input.substr(0, equalsIndex);
-				if (!key) key = getAliasName(input);
+				const value = input.slice(Math.max(0, equalsIndex + 1));
+				const key = input.slice(0, Math.max(0, equalsIndex)) || getAliasName(input);
+
 				command.input[key] = value;
-			});
+			}
 		} else {
 			command.input = inputSource;
 		}
@@ -45,22 +44,18 @@ export default async function runRollup(command: Record<string, any>): Promise<v
 			? command.environment
 			: [command.environment];
 
-		environment.forEach((arg: string) => {
-			arg.split(',').forEach((pair: string) => {
+		for (const argument of environment) {
+			for (const pair of argument.split(',')) {
 				const [key, ...value] = pair.split(':');
-				if (value.length) {
-					process.env[key] = value.join(':');
-				} else {
-					process.env[key] = String(true);
-				}
-			});
-		});
+				env[key] = value.length === 0 ? String(true) : value.join(':');
+			}
+		}
 	}
 
 	if (isWatchEnabled(command.watch)) {
 		await loadFsEvents();
 		const { watch } = await import('./watch-cli');
-		watch(command);
+		await watch(command);
 	} else {
 		try {
 			const { options, warnings } = await getConfigs(command);
@@ -70,17 +65,14 @@ export default async function runRollup(command: Record<string, any>): Promise<v
 				}
 				if (command.failAfterWarnings && warnings.warningOccurred) {
 					warnings.flush();
-					handleError({
-						code: 'FAIL_AFTER_WARNINGS',
-						message: 'Warnings occurred and --failAfterWarnings flag present'
-					});
+					handleError(logFailAfterWarnings());
 				}
-			} catch (err: any) {
+			} catch (error: any) {
 				warnings.flush();
-				handleError(err);
+				handleError(error);
 			}
-		} catch (err: any) {
-			handleError(err);
+		} catch (error: any) {
+			handleError(error);
 		}
 	}
 }
@@ -90,8 +82,8 @@ async function getConfigs(
 ): Promise<{ options: MergedRollupOptions[]; warnings: BatchWarnings }> {
 	if (command.config) {
 		const configFile = await getConfigPath(command.config);
-		const { options, warnings } = await loadAndParseConfigFile(configFile, command);
+		const { options, warnings } = await loadConfigFile(configFile, command, false);
 		return { options, warnings };
 	}
-	return await loadConfigFromCommand(command);
+	return await loadConfigFromCommand(command, false);
 }

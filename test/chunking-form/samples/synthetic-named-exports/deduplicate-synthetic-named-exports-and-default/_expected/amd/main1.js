@@ -1,10 +1,8 @@
-define(['exports', './generated-lib'], (function (exports, lib) { 'use strict';
+define(['exports'], (function (exports) { 'use strict';
 
+	var lib = { foo: true, bar: true, baz: true };
 
-
-	exports.lib = lib.lib;
-	exports.foo = lib.lib.foo;
-
-	Object.defineProperty(exports, '__esModule', { value: true });
+	exports.foo = lib.foo;
+	exports.lib = lib;
 
 }));

@@ -1,5 +1,5 @@
-const { unlinkSync, writeFileSync } = require('fs');
-const path = require('path');
+const { unlinkSync, writeFileSync } = require('node:fs');
+const path = require('node:path');
 const { atomicWriteFileSync } = require('../../../../utils');
 
 let configFile;
@@ -12,18 +12,18 @@ const configContent =
 	'\t}\n' +
 	'};';
 
-module.exports = {
+module.exports = defineTest({
 	description: 'does not rebuild if the config file is updated without change',
 	command: 'rollup -cw',
 	before() {
-		configFile = path.resolve(__dirname, 'rollup.config.js');
+		configFile = path.resolve(__dirname, 'rollup.config.mjs');
 		writeFileSync(configFile, configContent);
 	},
 	after() {
 		unlinkSync(configFile);
 	},
 	abortOnStderr(data) {
-		if (data.includes(`created _actual${path.sep}main.js`)) {
+		if (data.includes(`created _actual/main.js`)) {
 			atomicWriteFileSync(configFile, configContent);
 			// wait some time for the watcher to trigger
 			return new Promise(resolve => setTimeout(() => resolve(true), 600));
@@ -31,11 +31,11 @@ module.exports = {
 	},
 	stderr(stderr) {
 		if (
-			!/^rollup v\d+\.\d+\.\d+(-\d+)?\nbundles main.js → _actual[\\/]main.js...\ncreated _actual[\\/]main.js in \d+ms\n$/.test(
+			!/^rollup v\d+\.\d+\.\d+(-\d+)?\nbundles main.js → _actual[/\\]main.js...\ncreated _actual[/\\]main.js in \d+ms\n$/.test(
 				stderr
 			)
 		) {
 			throw new Error(`stderr output does not match: ${JSON.stringify(stderr)}`);
 		}
 	}
-};
+});

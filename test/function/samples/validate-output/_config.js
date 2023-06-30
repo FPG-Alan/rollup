@@ -1,8 +1,8 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'handles validate failure',
 	options: {
-		onwarn(warning) {
-			throw warning;
+		onLog(_level, log) {
+			throw log;
 		},
 		output: {
 			outro: '/*',
@@ -23,4 +23,4 @@ module.exports = {
 			line: 5
 		}
 	}
-};
+});

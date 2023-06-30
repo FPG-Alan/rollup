@@ -1,13 +1,14 @@
-const assert = require('assert');
+const assert = require('node:assert');
 
 let named;
 let star;
 let defaulted;
 
-module.exports = {
+module.exports = defineTest({
 	description: 'handles external live-bindings',
 	options: {
-		external: ['named', 'star', 'defaulted']
+		external: ['named', 'star', 'defaulted'],
+		output: { interop: 'compat' }
 	},
 	context: {
 		require(id) {
@@ -56,4 +57,4 @@ module.exports = {
 		// make sure the default is not reexported
 		assert.equal(exports.default, undefined);
 	}
-};
+});

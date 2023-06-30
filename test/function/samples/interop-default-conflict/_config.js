@@ -1,13 +1,14 @@
-const assert = require('assert');
+const assert = require('node:assert');
 
 let bar = 'initial bar';
 let defaultValue = 'initial foo';
 
-module.exports = {
+module.exports = defineTest({
 	description:
 		'handles conflicts with added interop default variables and supports default live bindings',
 	options: {
-		external: 'external'
+		external: 'external',
+		output: { interop: 'compat' }
 	},
 	context: {
 		require() {
@@ -38,4 +39,4 @@ module.exports = {
 			external__default: 2
 		});
 	}
-};
+});

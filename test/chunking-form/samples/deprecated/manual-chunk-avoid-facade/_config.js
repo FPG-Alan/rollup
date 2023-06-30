@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'avoid facades if possible when using manual chunks',
 	options: {
 		strictDeprecations: false,
@@ -6,5 +6,6 @@ module.exports = {
 		manualChunks: {
 			manual: ['main2']
 		}
-	}
-};
+	},
+	expectedWarnings: ['DEPRECATED_FEATURE']
+});

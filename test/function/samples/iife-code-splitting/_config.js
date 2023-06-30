@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = defineTest({
 	description: 'throws when generating multiple chunks for an IIFE build',
 	options: {
 		output: { format: 'iife' }
@@ -7,6 +7,6 @@ module.exports = {
 		code: 'INVALID_OPTION',
 		message:
 			'Invalid value "iife" for option "output.format" - UMD and IIFE output formats are not supported for code-splitting builds.',
-		url: 'https://rollupjs.org/guide/en/#outputformat'
+		url: 'https://rollupjs.org/configuration-options/#output-format'
 	}
-};
+});
