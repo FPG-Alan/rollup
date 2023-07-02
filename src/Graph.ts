@@ -184,8 +184,7 @@ export default class Graph {
 			throw new Error('You must supply options.input to rollup');
 		}
 
-		// 这特么就直接push了？
-		// 上面的addEntryModules会从入口点开始分析所有模块， 每次
+		// 现在已经有了完整的 module 树, modulesById是压扁的
 		for (const module of this.modulesById.values()) {
 			if (module instanceof Module) {
 				this.modules.push(module);
@@ -195,6 +194,8 @@ export default class Graph {
 		}
 	}
 
+	// tree shaking
+	// 对每个模块， 在其ast上， 对每一个ast node， 标记是否应该包括在最终文件内
 	private includeStatements(): void {
 		const entryModules = [...this.entryModules, ...this.implicitEntryModules];
 		for (const module of entryModules) {
@@ -239,13 +240,18 @@ export default class Graph {
 		}
 	}
 
+
+
+
 	private sortModules(): void {
+		// 基本上就是把module树按照层次， 从最深的开始向上排列
 		const { orderedModules, cyclePaths } = analyseModuleExecution(this.entryModules);
 		for (const cyclePath of cyclePaths) {
 			this.options.onLog(LOGLEVEL_WARN, logCircularDependency(cyclePath));
 		}
 		this.modules = orderedModules;
 		for (const module of this.modules) {
+			// 把module.ast的this指向module
 			module.bindReferences();
 		}
 		this.warnForMissingExports();

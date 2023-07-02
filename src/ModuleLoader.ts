@@ -95,6 +95,12 @@ export class ModuleLoader {
 			: () => true;
 	}
 
+
+	// bundle时处理manualChunk使用
+	// 例如 {vandor: ['react', 'react-dom']}
+	// 会以 ['react', 'react-dom'] 为参数来调用这个函数
+	// 实际可以理解为分别以'react', 'react-dom' 为entryModule重新走一遍fetchModule逻辑， 最终建立一个module子树
+	// 重建过程中大部分情况下应该命中 handleExistingModule 逻辑
 	async addAdditionalModules(unresolvedModules: readonly string[]): Promise<Module[]> {
 		const result = this.extendLoadModulesPromise(
 			Promise.all(unresolvedModules.map(id => this.loadEntryModule(id, false, undefined, null)))
@@ -415,6 +421,7 @@ export class ModuleLoader {
 		// addModuleSource -> Module.setSource
 		// addModuleSource会加载文件内容， 并在module模块内添加处理ast
 		// 在addModuleSource执行完成后, 我们已经拥有了一棵对应当前module的AST的节点实例树
+		// 使用module上的 sourcesWithAssertions 和 dynamicImports 两个属性， 获取静态/动态引入的文件的id
 		const loadPromise: LoadModulePromise = this.addModuleSource(id, importer, module).then(() => [
 			this.getResolveStaticDependencyPromises(module),
 			this.getResolveDynamicImportPromises(module),
@@ -439,6 +446,7 @@ export class ModuleLoader {
 		const resolveDependencyPromises = await loadPromise;
 
 		// preload 在什么场景下会是true?
+		// anyway, fetchModuleDependencies 继续加载module的所有依赖
 		if (!isPreload) {
 			await this.fetchModuleDependencies(module, ...resolveDependencyPromises);
 		} else if (isPreload === RESOLVE_DEPENDENCIES) {
@@ -448,7 +456,7 @@ export class ModuleLoader {
 	}
 
 	/**
-	 * 获取静态依赖
+	 * 获取模块的依赖（静态导入/动态导入/reexport的导入）
 	 * @param module
 	 * @param resolveStaticDependencyPromises
 	 * @param resolveDynamicDependencyPromises
@@ -461,9 +469,11 @@ export class ModuleLoader {
 		resolveDynamicDependencyPromises: readonly ResolveDynamicDependencyPromise[],
 		loadAndResolveDependenciesPromise: Promise<void>
 	): Promise<void> {
+		// 防止重入
 		if (this.modulesWithLoadedDependencies.has(module)) {
 			return;
 		}
+		// 防止重入， 标记当前模块
 		this.modulesWithLoadedDependencies.add(module);
 		await Promise.all([
 			this.fetchStaticDependencies(module, resolveStaticDependencyPromises),
@@ -483,6 +493,7 @@ export class ModuleLoader {
 			const { assertions, external, id, moduleSideEffects, meta } = resolvedId;
 			let externalModule = this.modulesById.get(id);
 			if (!externalModule) {
+				// import进来的module对于当前module来说是external module
 				externalModule = new ExternalModule(
 					this.options,
 					id,
@@ -507,13 +518,17 @@ export class ModuleLoader {
 			}
 			return Promise.resolve(externalModule);
 		}
+
+		// 这里开始递归， 初始化所有引入进来的module
 		return this.fetchModule(resolvedId, importer, false, false);
 	}
 
+	// 加载静态导入的模块
 	private async fetchStaticDependencies(
 		module: Module,
 		resolveStaticDependencyPromises: readonly ResolveStaticDependencyPromise[]
 	): Promise<void> {
+		// 这里给了我一个启发， promise resolve了之后随便传， 加上个then就能获取
 		for (const dependency of await Promise.all(
 			resolveStaticDependencyPromises.map(resolveStaticDependencyPromise =>
 				resolveStaticDependencyPromise.then(([source, resolvedId]) =>

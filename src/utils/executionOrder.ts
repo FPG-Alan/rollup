@@ -12,6 +12,8 @@ export function sortByExecutionOrder(units: OrderedExecutionUnit[]): void {
 	units.sort(compareExecIndex);
 }
 
+
+// 应该是关键了吧
 export function analyseModuleExecution(entryModules: readonly Module[]): {
 	cyclePaths: string[][];
 	orderedModules: Module[];
@@ -24,18 +26,26 @@ export function analyseModuleExecution(entryModules: readonly Module[]): {
 	const orderedModules: Module[] = [];
 
 	const analyseModule = (module: Module | ExternalModule) => {
+		// 模块，不是外部模块
 		if (module instanceof Module) {
 			for (const dependency of module.dependencies) {
+				// 当前模块的依赖是他的父级
 				if (parents.has(dependency)) {
+					// 然而父级还没有被分析过
 					if (!analysedModules.has(dependency)) {
+						// 这就是一个循环引用
 						cyclePaths.push(getCyclePath(dependency as Module, module, parents));
 					}
 					continue;
 				}
+				// 设置当前模块是这个依赖的父级（之一）
 				parents.set(dependency, module);
+				// 继续分析依赖
 				analyseModule(dependency);
 			}
 
+
+			// 只有遇到没有依赖的module， 或者所有依赖都执行完后， 才会执行到这
 			for (const dependency of module.implicitlyLoadedBefore) {
 				dynamicImports.add(dependency);
 			}

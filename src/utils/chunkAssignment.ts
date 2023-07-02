@@ -18,9 +18,14 @@ interface ModulesWithDependentEntries {
  * point and then assigns that entry point to all modules than can be reached
  * via static imports. We call this the *dependent entry points* of that
  * module.
+ * 从本质上讲，该算法首先从每个静态或动态入口点开始，然后将该入口点分配给通过静态导入
+ * 可以到达的所有模块。 我们称之为该模块的*依赖入口点*
+ *
  *
  * Then we group all modules with the same dependent entry points into chunks
  * as those modules will always be loaded together.
+ *
+ * 然后，我们将具有相同依赖入口点的所有模块分组为块，因为这些模块将始终一起加载。
  *
  * One non-trivial optimization we can apply is that dynamic entries are
  * different from static entries in so far as when a dynamic import occurs,
@@ -32,8 +37,15 @@ interface ModulesWithDependentEntries {
  * importing
  * chunk.
  *
+ * 我们可以应用的一项重要优化是动态条目，与静态条目不同的是，当发生动态导入时，
+ * 某些模块已经在内存中。 如果其中一些模块也是动态条目的依赖项，
+ * 那么为它们创建单独的块就没有意义。
+ * 相反，动态导入目标可以从导入块加载它们。
+ *
  * With regard to chunking, if B is implicitly loaded after A, then this can be
  * handled the same way as if there was a dynamic import A => B.
+ *
+ * 关于分块，如果 B 在 A 之后隐式加载，则可以按照与动态导入 A => B 相同的方式进行处理。
  *
  * Example:
  * Assume A -> B (A imports B), A => C (A dynamically imports C) and C -> B.

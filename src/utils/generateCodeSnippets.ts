@@ -41,7 +41,9 @@ export function getGenerateCodeSnippets({
 	compact,
 	generatedCode: { arrowFunctions, constBindings, objectShorthand, reservedNamesAsProps }
 }: NormalizedOutputOptions): GenerateCodeSnippets {
+	// compact来自于配置项 output.compact, 会最小化rollup的包装代码
 	const { _, n, s } = compact ? { _: '', n: '', s: '' } : { _: ' ', n: '\n', s: ';' };
+	// 配置项 output.generatedCode, 只会影响rollup的包装代码
 	const cnst = constBindings ? 'const' : 'var';
 	const getNonArrowFunctionIntro: GenerateCodeSnippets['getNonArrowFunctionIntro'] = (
 		parameters,

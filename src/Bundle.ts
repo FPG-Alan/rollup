@@ -102,6 +102,7 @@ export default class Bundle {
 		return outputBundleBase;
 	}
 
+	// 类似 {vandor: ['react', 'react-dom']}
 	private async addManualChunks(
 		manualChunks: Record<string, readonly string[]>
 	): Promise<Map<Module, string>> {
@@ -109,6 +110,8 @@ export default class Bundle {
 		const chunkEntries = await Promise.all(
 			Object.entries(manualChunks).map(async ([alias, files]) => ({
 				alias,
+				// 分别以'react', 'react-dom' 为entryModule重新走一遍fetchModule逻辑， 最终建立一个module子树
+				// entries即为子树的两个根
 				entries: await this.graph.moduleLoader.addAdditionalModules(files)
 			}))
 		);
@@ -162,30 +165,50 @@ export default class Bundle {
 		this.pluginDriver.finaliseAssets();
 	}
 
+	// 这应该是我要的答案
 	private async generateChunks(
 		bundle: OutputBundleWithPlaceholders,
 		getHashPlaceholder: HashPlaceholderGenerator
 	): Promise<Chunk[]> {
 		const { experimentalMinChunkSize, inlineDynamicImports, manualChunks, preserveModules } =
 			this.outputOptions;
+
+		// 首先处理manualChunk相关逻辑
 		const manualChunkAliasByEntry =
 			typeof manualChunks === 'object'
 				? await this.addManualChunks(manualChunks)
 				: this.assignManualChunks(manualChunks);
+
+		// 设置rollup包装代码
 		const snippets = getGenerateCodeSnippets(this.outputOptions);
+		// 过滤出所有会进入bundle的模块
+		// 条件是
+		// 1. 是module
+		// 2. 没有被treeshaking（module.isIncluded）或者 是入口模块 或者 有动态导入
 		const includedModules = getIncludedModules(this.graph.modulesById);
 		const inputBase = commondir(getAbsoluteEntryModulePaths(includedModules, preserveModules));
+		// 对于外部模块， 直接转化成ExternalChunk实例， 一个外部模块一个external chunk实例
 		const externalChunkByModule = getExternalChunkByModule(
 			this.graph.modulesById,
 			this.outputOptions,
 			inputBase
 		);
+
+		// 开始module到chunk的转换
 		const chunks: Chunk[] = [];
 		const chunkByModule = new Map<Module, Chunk>();
+
+		// 好大一个for循环体
+
+		// inlineDynamicImports 是配置项， 如果为true则会把动态导入的模块内联进来， 而不是单独一个chunk
 		for (const { alias, modules } of inlineDynamicImports
 			? [{ alias: null, modules: includedModules }]
+		// preserveModules 也是配置项，如果为true就是每个module对应一个chunk， 这基本可以认为是不打包...
 			: preserveModules
 			? includedModules.map(module => ({ alias: null, modules: [module] }))
+
+		// 嘿嘿哈， 我觉得我找的就是你！！！
+		// 卧槽， 这玩意注释长的一逼啊
 			: getChunkAssignments(
 					this.graph.entryModules,
 					manualChunkAliasByEntry,
@@ -309,6 +332,10 @@ function addModuleToManualChunk(
 	manualChunkAliasByEntry: Map<Module, string>
 ): void {
 	const existingAlias = manualChunkAliasByEntry.get(module);
+
+	// 防止用户错误设置manualChunk， 类似下面的情况
+	// {vandor: ['react', 'react-dom']， common:['react]};
+
 	if (typeof existingAlias === 'string' && existingAlias !== alias) {
 		return error(logCannotAssignModuleToChunk(module.id, alias, existingAlias));
 	}

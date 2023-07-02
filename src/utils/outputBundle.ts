@@ -11,6 +11,8 @@ export interface OutputBundleWithPlaceholders {
 	[lowercaseBundleKeys]: Set<string>;
 }
 
+// 代理， 拦截了outputbundle的set/get/deleteProperty方法
+// 主要是在 outputbundle更改时维护一个 reservedLowercaseBundleKeys set， 并作为outputBundle的Symbol('bundleKeys')属性被外界获取
 export const getOutputBundle = (outputBundleBase: OutputBundle): OutputBundleWithPlaceholders => {
 	const reservedLowercaseBundleKeys = new Set<string>();
 	return new Proxy(outputBundleBase, {

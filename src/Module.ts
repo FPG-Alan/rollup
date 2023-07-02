@@ -198,6 +198,7 @@ function getAndExtendSideEffectModules(variable: Variable, module: Module): Set<
 	return sideEffectModules;
 }
 
+// implicitlyLoadedBefore 是什么
 export default class Module {
 	readonly alternativeReexportModules = new Map<Variable, Module>();
 	readonly chunkFileNames = new Set<string>();
