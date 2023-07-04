@@ -21,6 +21,8 @@ interface ModulesWithDependentEntries {
  * 从本质上讲，该算法首先从每个静态或动态入口点开始，然后将该入口点分配给通过静态导入
  * 可以到达的所有模块。 我们称之为该模块的*依赖入口点*
  *
+ * 所谓的依赖入口点， 我理解是，可以到达当前模块的所有路径
+ *
  *
  * Then we group all modules with the same dependent entry points into chunks
  * as those modules will always be loaded together.
@@ -59,6 +61,13 @@ interface ModulesWithDependentEntries {
  *
  * So we do not assign the dynamic entry C as dependent entry point to modules
  * that are already loaded.
+ * 例子：
+ * 假设 A -> B（A 导入 B）、A => C（A 动态导入 C）且 C -> B。
+ * 然后初始算法会将 A 分配到 A 块中，将 C 分配到 C 中
+ * chunk 和 B 进入 AC chunk，即具有依赖项的 chunk A 点和 C 点。
+ * 然而我们知道C只能从A加载，因此当C加载时A及其依赖项B必须已经在内存中。 因此，
+ * 只创建两个包含 [AB] 的块 A 和包含 [C] 的 C 就足够了。
+ * 因此，我们不会将动态入口 C 作为依赖入口点分配给已加载的模块。
  *
  * In a more complex example, let us assume that we have entry points X and Y.
  * Further, let us assume
@@ -69,6 +78,9 @@ interface ModulesWithDependentEntries {
  * So without dynamic import optimization, the dependent entry points are
  * A: XY, B: DXY, C: DX, D: D, X: X, Y: Y,
  * so we would for now create six chunks.
+ * 考虑这种复杂情况， 没有动态导入优化的话， 依赖入口点是
+ * A: XY, B: DXY, C: DX, D: D, X: X, Y: Y,
+ * 所以我们现在会创建六个chunk。
  *
  * Now D is loaded only after A is loaded. But A is loaded if either X is
  * loaded
@@ -78,14 +90,20 @@ interface ModulesWithDependentEntries {
  * depends on, which in this case are the modules A and B.
  * We could also say they are all modules that have both X and Y as dependent
  * entry points.
+ * D只会在A加载后加载， 但A会在X或Y加载后加载， 因此，加载 D 时已经在内存中的模块是 X
+ * 依赖的所有模块与 Y 依赖的所有模块的交集，在本例中是模块 A 和 B。
+ * 我们也可以说它们都是 将 X 和 Y 作为依赖入口点的模块。
  *
  * So we can remove D as dependent entry point from A and B, which means they
  * both now have only XY as dependent entry points and can be merged into the
  * same chunk.
+ * 因此，我们可以从 A 和 B 的依赖入口点中删除D，这意味着它们现在都只有 XY 作为
+ * 依赖入口点，并且可以合并到同一个chunk中。
  *
  * Now let us extend this to the most general case where we have several
  * dynamic
  * importers for one dynamic entry point.
+ * 让我们将这个例子拓展到更普遍的情况：一个动态入口点有多个 dynamic importers。
  *
  * In the most general form, it works like this:
  * For each dynamic entry point, we have a number of dynamic importers, which
@@ -96,6 +114,11 @@ interface ModulesWithDependentEntries {
  * So the modules that are guaranteed to be in memory when the dynamic entry
  * point is loaded are the intersection of the modules already in memory for
  * each dynamic importer.
+ * 在最一般的形式中，它的工作原理如下：
+ * 对于每个动态入口点，我们有许多动态导入器，它们是导入它的模块。
+ * 利用前面的想法，我们可以通过查找将动态导入器的所有依赖入口点作为依赖入口点的
+ * 所有模块来确定每个动态导入器已在内存中的模块。因此，加载动态入口点时保证位于内存中
+ * 的模块是每个动态导入器内存中已存在的模块的交集。
  *
  * Assuming that A => D and B => D and A has dependent entry points XY and B
  * has
@@ -103,42 +126,68 @@ interface ModulesWithDependentEntries {
  * all modules that have at least XYZ as dependent entry points.
  * We call XYZ the *dynamically dependent entry points* of D.
  *
+ * 也就是， 动态导入的模块， 其"动态依赖入口点"是所有 动态导入这个模块的 模块 的
+ * 所有 依赖入口点的交集。
+ *
+ * A动态导入D，B动态导入D，那么D的动态依赖入口点即A的依赖入口点和B的依赖入口点的交集。
+ *
  * Now there is one last case to consider: If one of the dynamically dependent
  * entries is itself a dynamic entry, then any module is in memory that either
  * is a dependency of that dynamic entry or again has the dynamic dependent
  * entries of that dynamic entry as dependent entry points.
+ * 现在需要考虑的最后一种情况是：wtf??
+ * 似乎就是上面那种情况， A或B自身也是动态导入的
  *
  * A naive algorithm for this proved to be costly as it contained an O(n^3)
  * complexity with regard to dynamic entries that blew up for very large
  * projects.
+ * 事实证明，这种朴素的算法成本高昂，因为它包含关于dynamic entrie 的O(n^3)的复杂度，
+ * 涉及到非常大的项目会爆炸。
  *
  * If we have an efficient way to do Set operations, an alternative approach
  * would be to instead collect already loaded modules per dynamic entry. And as
  * all chunks from the initial grouping would behave the same, we can instead
  * collect already loaded chunks for a performance improvement.
  *
+ * 如果我们有一种有效的方法来执行 Set 操作，另一种方法是收集每个动态条目已加载的模块。
+ * 由于初始分组中的所有块的行为都是相同的，因此我们可以收集已加载的块以提高性能。
+ * 这句话没懂。
+ *
  * To do that efficiently, need
  * - a Map of dynamic imports per dynamic entry, which contains all dynamic
  *   imports that can be triggered by a dynamic entry
+ * 	 动态入口内的所有动态imports map
  * - a Map of static dependencies per entry
+ * 	 每个入口的静态依赖 map
  * - a Map of already loaded chunks per entry that we initially populate with
  *   empty Sets for static entries and Sets containing all entries for dynamic
  *   entries
+ * 	 每个入口的已加载的chunks map
  *
  * For efficient operations, we assign each entry a numerical index and
  * represent Sets of Chunks as BigInt values where each chunk corresponds to a
  * bit index. Then thw last two maps can be represented as arrays of BigInt
  * values.
  *
+ * 为了高效操作，我们为每个entry分配一个数字索引，并将chunk set表示为 BigInt 值，
+ * 其中每个块对应于一个位索引。 然后最后两个映射可以表示为 BigInt 值的数组。
+ *
  * Then we iterate through each dynamic entry. We set the already loaded modules
  * to the intersection of the previously already loaded modules with the union
  * of the already loaded modules of that chunk with its static dependencies.
+ *
+ * 然后我们迭代每个动态enty。 我们将已加载的模块设置为先前已加载的模块
+ * 与该块的已加载模块及其静态依赖项的并集的交集。
  *
  * If the already loaded modules changed, then we use the Map of dynamic imports
  * per dynamic entry to marks all dynamic entry dependencies as "dirty" and put
  * them back into the iteration. As an additional optimization, we note for
  * each dynamic entry which dynamic dependent entries have changed and only
  * intersect those entries again on subsequent interations.
+ *
+ * 如果已经加载的模块发生了变化，那么我们使用每个动态条目的动态导入映射将所有动态条目
+ * 依赖项标记为“脏”并将它们放回迭代中。 作为一项额外的优化，我们为每个动态条目记录哪些
+ * 动态相关条目已更改，并且仅在后续交互中再次与这些条目相交。
  *
  * Then we remove the dynamic entries from the list of dependent entries for
  * those chunks that are already loaded for that dynamic entry and create
