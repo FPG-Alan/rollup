@@ -100,10 +100,26 @@ interface ModulesWithDependentEntries {
  * 因此，我们可以从 A 和 B 的依赖入口点中删除D，这意味着它们现在都只有 XY 作为
  * 依赖入口点，并且可以合并到同一个chunk中。
  *
+ * 我的理解
+ * 处理动态加载的模块D时， 他有两个静态import， B和C， 按照一般算法， 那
+ * B和C两个module就要添加C作为他们的依赖入口点， 但此时
+ * 1. D的动态导入者A的依赖入口点是X, Y
+ * 2. B的依赖入口点也包括X， Y
+ *
+ * 因此：
+ * 他们的依赖入口点的交集存在， 即为X, Y, 可以推导出， 当D加载时， B一定在内存
+ * 中了
+ * 所以：
+ * D可以不用添加到B的依赖入口点中去。
+ *
+ * 结果就是， B的依赖入口点去除D后， 只有【X, Y】， 和A的依赖入口点一致， 可以打到
+ * 同一个chunk中， 相比之前就少了一个chunk
+ *
  * Now let us extend this to the most general case where we have several
  * dynamic
  * importers for one dynamic entry point.
  * 让我们将这个例子拓展到更普遍的情况：一个动态入口点有多个 dynamic importers。
+ * 也就是说， 比如上面的例子， 除了A还会有其他的模块E, F，G... 等也会动态加载D
  *
  * In the most general form, it works like this:
  * For each dynamic entry point, we have a number of dynamic importers, which
@@ -111,14 +127,14 @@ interface ModulesWithDependentEntries {
  * the modules already in memory for each dynamic importer by looking for all
  * modules that have all the dependent entry points of the dynamic importer as
  * dependent entry points.
+ * 以上面的例子来说，A或者E, F， G...是一个个"dynamic importer", 我们要寻找这样
+ * 一些modules， 他们的依赖入口点**包含**A的所有的依赖入口点。
+ *
  * So the modules that are guaranteed to be in memory when the dynamic entry
  * point is loaded are the intersection of the modules already in memory for
  * each dynamic importer.
- * 在最一般的形式中，它的工作原理如下：
- * 对于每个动态入口点，我们有许多动态导入器，它们是导入它的模块。
- * 利用前面的想法，我们可以通过查找将动态导入器的所有依赖入口点作为依赖入口点的
- * 所有模块来确定每个动态导入器已在内存中的模块。因此，加载动态入口点时保证位于内存中
- * 的模块是每个动态导入器内存中已存在的模块的交集。
+ * 也就是说， 一个动态入口点D加载时， 能确保在内存中的模块就是每一个动态加载D的模块
+ * 依赖的模块的交集。
  *
  * Assuming that A => D and B => D and A has dependent entry points XY and B
  * has
@@ -126,17 +142,19 @@ interface ModulesWithDependentEntries {
  * all modules that have at least XYZ as dependent entry points.
  * We call XYZ the *dynamically dependent entry points* of D.
  *
- * 也就是， 动态导入的模块， 其"动态依赖入口点"是所有 动态导入这个模块的 模块 的
- * 所有 依赖入口点的交集。
- *
- * A动态导入D，B动态导入D，那么D的动态依赖入口点即A的依赖入口点和B的依赖入口点的交集。
+ * A动态导入D，B动态导入D，A的依赖入口点是X, Y， B的依赖入口点是Y,Z
+ * 那么D加载时， 能保证在内存中的模块的依赖入口点中应该至少拥有X, Y， Z
+ * 我们就把X, Y， Z成为D的 "动态依赖入口点"
  *
  * Now there is one last case to consider: If one of the dynamically dependent
  * entries is itself a dynamic entry, then any module is in memory that either
  * is a dependency of that dynamic entry or again has the dynamic dependent
  * entries of that dynamic entry as dependent entry points.
- * 现在需要考虑的最后一种情况是：wtf??
- * 似乎就是上面那种情况， A或B自身也是动态导入的
+ * 就是说， 比如上面， A有依赖入口点X, Y， 那如果X也是一个动态入口点， 那么这个时候
+ * 在内存里的模块就应该是
+ * - 要么是X自己的依赖
+ * - 要么跟D一样， 是X的 "动态依赖入口点"
+ * 就是递归X， 像考虑D那样考虑X
  *
  * A naive algorithm for this proved to be costly as it contained an O(n^3)
  * complexity with regard to dynamic entries that blew up for very large
