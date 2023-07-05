@@ -41,8 +41,7 @@ interface ModulesWithDependentEntries {
  *
  * 我们可以应用的一项重要优化是动态条目，与静态条目不同的是，当发生动态导入时，
  * 某些模块已经在内存中。 如果其中一些模块也是动态条目的依赖项，
- * 那么为它们创建单独的块就没有意义。
- * 相反，动态导入目标可以从导入块加载它们。
+ * 那么为它们创建单独的块就没有意义。相反，动态导入目标可以从导入块加载它们。
  *
  * With regard to chunking, if B is implicitly loaded after A, then this can be
  * handled the same way as if there was a dynamic import A => B.
@@ -63,11 +62,17 @@ interface ModulesWithDependentEntries {
  * that are already loaded.
  * 例子：
  * 假设 A -> B（A 导入 B）、A => C（A 动态导入 C）且 C -> B。
- * 然后初始算法会将 A 分配到 A 块中，将 C 分配到 C 中
- * chunk 和 B 进入 AC chunk，即具有依赖项的 chunk A 点和 C 点。
+ * 然后初始算法会将 A 分配到 A chunk中，将 C 分配到 C chunk 中
+ * B则 进入 AC chunk（即所有具有A和C两个依赖入口点的modules形成的chunk）
  * 然而我们知道C只能从A加载，因此当C加载时A及其依赖项B必须已经在内存中。 因此，
  * 只创建两个包含 [AB] 的块 A 和包含 [C] 的 C 就足够了。
  * 因此，我们不会将动态入口 C 作为依赖入口点分配给已加载的模块。
+ *
+ * 我的问题是， 这里的 "already loaded" 是如何判断的？ 这里的loaded， 是指在网络上已经
+ * "加载的"， 还是在rollup处理chunk时， 在内存中已经"加载的"？
+ * 如果是前者， 是不是说， 在处理B时， 他的依赖入口点里面会存在某些模块本身时动态入口点
+ * 对于这些动态入口点， 我们需要考虑B在这些入口点加载时，是否已经在内存中了， 如果是的，
+ * 那么这些动态入口点不需要被加入到B上。
  *
  * In a more complex example, let us assume that we have entry points X and Y.
  * Further, let us assume
