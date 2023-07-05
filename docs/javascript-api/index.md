@@ -77,6 +77,7 @@ async function generateOutputs(bundle) {
         //   exports: string[],             // exported variable names
         //   facadeModuleId: string | null, // the id of a module that this chunk corresponds to
         //   fileName: string,              // the chunk file name
+		// 这特么不是chunk层面的属性么, 为什么在module class里有这个属性
         //   implicitlyLoadedBefore: string[]; // entries that should only be loaded after this chunk
         //   imports: string[],             // external modules imported statically by the chunk
         //   importedBindings: {[imported: string]: string[]} // imported bindings per dependency

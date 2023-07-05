@@ -1,3 +1,4 @@
+// get, 或者初始化一个并set
 export function getOrCreate<K, V>(map: Map<K, V>, key: K, init: () => V): V {
 	const existing = map.get(key);
 	if (existing !== undefined) {

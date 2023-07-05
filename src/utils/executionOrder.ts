@@ -13,7 +13,8 @@ export function sortByExecutionOrder(units: OrderedExecutionUnit[]): void {
 }
 
 
-// 应该是关键了吧
+// 这个函数位于graph构建的第二步
+// 基本上是把module从树形结构转变成数组结构
 export function analyseModuleExecution(entryModules: readonly Module[]): {
 	cyclePaths: string[][];
 	orderedModules: Module[];

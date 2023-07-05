@@ -210,6 +210,8 @@ export default class Bundle {
 		// 嘿嘿哈， 我觉得我找的就是你！！！
 		// 卧槽， 这玩意注释长的一逼啊
 			: getChunkAssignments(
+				// 用的是树形结构的数据
+
 					this.graph.entryModules,
 					manualChunkAliasByEntry,
 					experimentalMinChunkSize,

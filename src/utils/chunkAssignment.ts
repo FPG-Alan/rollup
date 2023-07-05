@@ -172,9 +172,12 @@ interface ModulesWithDependentEntries {
  * all chunks from the initial grouping would behave the same, we can instead
  * collect already loaded chunks for a performance improvement.
  *
- * 如果我们有一种有效的方法来执行 Set 操作，另一种方法是收集每个动态条目已加载的模块。
+ * 如果我们有一种有效的方法来执行 Set 操作，另一种方法是针对每个动态入口， 收集已
+ * 加载的模块。
  * 由于初始分组中的所有块的行为都是相同的，因此我们可以收集已加载的块以提高性能。
- * 这句话没懂。
+ *
+ * 问题是， 初始分组时什么？ 所有chunk的相同行为时什么？
+ *
  *
  * To do that efficiently, need
  * - a Map of dynamic imports per dynamic entry, which contains all dynamic
@@ -222,8 +225,12 @@ export function getChunkAssignments(
 	minChunkSize: number,
 	log: LogHandler
 ): ChunkDefinitions {
+
+	// 暂时不考虑manualChunks的情况, 这俩变量都是空的
 	const { chunkDefinitions, modulesInManualChunks } =
 		getChunkDefinitionsFromManualChunks(manualChunkAliasByEntry);
+
+
 	const {
 		allEntries,
 		dependentEntriesByModule,
@@ -295,39 +302,84 @@ function addStaticDependenciesToManualChunk(
 	}
 }
 
+/**
+ * entries第一层入口点 大部分情况下就一个
+ * 这个函数不是递归的
+ */
 function analyzeModuleGraph(entries: Iterable<Module>): {
 	allEntries: ReadonlyArray<Module>;
 	dependentEntriesByModule: Map<Module, Set<number>>;
 	dynamicImportsByEntry: ReadonlyArray<ReadonlySet<number>>;
 	dynamicallyDependentEntriesByDynamicEntry: Map<number, Set<number>>;
 } {
+
 	const dynamicEntryModules = new Set<Module>();
+	// 每个模块的 [依赖入口点]
 	const dependentEntriesByModule: Map<Module, Set<number>> = new Map();
+	// 每个入口点内拥有的动态导入模块的集合的数组， 每个模块的动态导入模块形成一个集合， 入口点内所有的模块的动态导入模块形成数组
 	const dynamicImportModulesByEntry: Set<Module>[] = [];
+	// 所有入口点
 	const allEntriesSet = new Set(entries);
+
+	// 入口递增索引
 	let entryIndex = 0;
+
+	// 遍历所有入口点
+	// 这是一个双循环,
+	// 1. 首先每个模块都会经历广度优先搜索, 遍历自己的每一个静态导入,
+	// 		对于每个模块, 主要是把当前的入口点的索引放入 dependentEntriesByModule 中
+	// 		这个Map的key是模块, value是一个Set, 里面放入了当前模块的所有入口点的索引, 就是注释里的 "依赖入口点"
+	// 		还有就是处理动态导入, [具体如何处理动态导入的]
+	//
+	// 2. 在循环体内, 某个module如果存在动态导入, 导入的模块就会被压入 allEntriesSet 中, 作为一个入口点进入后面的外层循环
 	for (const currentEntry of allEntriesSet) {
+		// 当前入口点的动态导入模块
 		const dynamicImportsForCurrentEntry = new Set<Module>();
+
 		dynamicImportModulesByEntry.push(dynamicImportsForCurrentEntry);
+
+		// 初始化循环集合, 入口点就是内层循环的第一个被处理的模块
 		const modulesToHandle = new Set([currentEntry]);
+		// 这个循环中, 遇到静态导入的都会被压入modulesToHandle进行下一次循环
 		for (const module of modulesToHandle) {
+			// 从 dependentEntriesByModule 中拿到 module 的依赖项集合, 如果没有就通过 getNewSet 初始化一个新的
+			// getNewSet 就是返回一个空的, 包含数字的集合 (Set<number>)
+			// 那么这行代码就是给 [[当前的module的][依赖项集合]] 加上 [当前的入口索引]
 			getOrCreate(dependentEntriesByModule, module, getNewSet<number>).add(entryIndex);
+
+			// 遍历当前模块的所有静态导入的module, 加入到待处理队列
 			for (const dependency of module.getDependenciesToBeIncluded()) {
+				// 如果不是 ExternalModule 就加入 modulesToHandle
+				// 等后面的循环内处理
 				if (!(dependency instanceof ExternalModule)) {
 					modulesToHandle.add(dependency);
 				}
 			}
+
+			// 遍历动态导入, 为何这里不用 dynamicDependencies ?
 			for (const { resolution } of module.dynamicImports) {
 				if (
+					// 是模块(而非外部模块,字符串, null)...
+					// import()能导入字符串这些玩意么...
 					resolution instanceof Module &&
+					// 动态导入的模块的 includedDynamicImporters 长度大于0
+					// 也就是 [有至少一个模块动态导入了这个模块]， 这个是为了健壮性考虑， 这里可以不管
 					resolution.includedDynamicImporters.length > 0 &&
+					// 动态导入的模块不在 allEntriesSet 中
 					!allEntriesSet.has(resolution)
 				) {
+
+					// 压入当前入口点的动态导入模块集合
 					dynamicEntryModules.add(resolution);
+					// 压入 allEntriesSet, 作为入口点进入后续的外层循环
 					allEntriesSet.add(resolution);
+					// 压入当前入口点的所有动态引入模块
 					dynamicImportsForCurrentEntry.add(resolution);
 				}
 			}
+			// implicitlyLoadedBefore 应该是插件行为设置的
+			// 插件上下文内有个函数 emitFile, 如果产出了type为chunk的file, 会需要设置implicitlyLoadedBefore
+			// blabla的, 我们这里暂时先不管
 			for (const dependency of module.implicitlyLoadedBefore) {
 				if (!allEntriesSet.has(dependency)) {
 					dynamicEntryModules.add(dependency);
@@ -337,6 +389,9 @@ function analyzeModuleGraph(entries: Iterable<Module>): {
 		}
 		entryIndex++;
 	}
+
+
+	// 基本上就是除了一开始的入口点， 遇到动态导入的模块就生成一个新的入口点
 	const allEntries = [...allEntriesSet];
 	const { dynamicEntries, dynamicImportsByEntry } = getDynamicEntries(
 		allEntries,

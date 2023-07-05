@@ -57,6 +57,7 @@ export default class Graph {
 	readonly astLru = flru<acorn.Node>(5);
 	readonly cachedModules = new Map<string, ModuleJSON>();
 	readonly deoptimizationTracker = new PathTracker();
+	// 属性结构的module数据
 	entryModules: Module[] = [];
 	readonly fileOperationQueue: Queue;
 	readonly moduleLoader: ModuleLoader;
@@ -71,6 +72,7 @@ export default class Graph {
 
 	private readonly externalModules: ExternalModule[] = [];
 	private implicitEntryModules: Module[] = [];
+	// 压平的module数据, 经过graph build第二步排序, 在树上越深的越靠前
 	private modules: Module[] = [];
 	private declare pluginCache?: Record<string, SerializablePluginCache>;
 
@@ -111,6 +113,8 @@ export default class Graph {
 		timeEnd('generate module graph', 2);
 
 		timeStart('sort and bind modules', 2);
+		// 这个阶段会对module进行排序, 并且将module的依赖关系绑定到module上
+		// 排序是为啥？后续有啥用？
 		this.phase = BuildPhase.ANALYSE;
 		this.sortModules();
 		timeEnd('sort and bind modules', 2);

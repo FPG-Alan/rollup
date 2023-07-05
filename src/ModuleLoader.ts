@@ -351,6 +351,9 @@ export class ModuleLoader {
 		return loadNewModulesPromise;
 	}
 
+
+	// 加载动态导入的模块
+	// fetchModule->fetchModuleDependencies->fetchDynamicDependencies
 	private async fetchDynamicDependencies(
 		module: Module,
 		resolveDynamicImportPromises: readonly ResolveDynamicDependencyPromise[]
@@ -484,6 +487,9 @@ export class ModuleLoader {
 		await loadAndResolveDependenciesPromise;
 	}
 
+
+	// 递归处理module树的关键节点
+	// fetchModule后， fetchStaticDependencies / fetchDynamicDependencies 均会走到这个函数
 	private fetchResolvedDependency(
 		source: string,
 		importer: string,
@@ -524,6 +530,7 @@ export class ModuleLoader {
 	}
 
 	// 加载静态导入的模块
+	// fetchModule->fetchModuleDependencies->fetchStaticDependencies
 	private async fetchStaticDependencies(
 		module: Module,
 		resolveStaticDependencyPromises: readonly ResolveStaticDependencyPromise[]

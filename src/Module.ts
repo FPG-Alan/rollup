@@ -199,6 +199,9 @@ function getAndExtendSideEffectModules(variable: Variable, module: Module): Set<
 }
 
 // implicitlyLoadedBefore 是什么
+// 插件行为
+
+
 export default class Module {
 	readonly alternativeReexportModules = new Map<Variable, Module>();
 	readonly chunkFileNames = new Set<string>();
@@ -208,9 +211,14 @@ export default class Module {
 		priority: number;
 	}[] = [];
 	readonly cycles = new Set<symbol>();
+	// 在module loader 的 fetchModule之后， fetchStaticDependencies函数内赋值
+	// 这个字段是当前module的所有静态导入的module集合
 	readonly dependencies = new Set<Module | ExternalModule>();
+	// 在module loader 的 fetchModule之后， fetchDynamicDependencies函数内赋值
+	// 这个字段是当前module的所有动态导入的module集合
 	readonly dynamicDependencies = new Set<Module | ExternalModule>();
 	readonly dynamicImporters: string[] = [];
+	// 在建立module的AST实例树的时候赋值的
 	readonly dynamicImports: DynamicImport[] = [];
 	excludeFromSourcemap: boolean;
 	execIndex = Infinity;
@@ -445,20 +453,32 @@ export default class Module {
 		return this.allExportNames;
 	}
 
+
 	getDependenciesToBeIncluded(): Set<Module | ExternalModule> {
+		// 防止重入
 		if (this.relevantDependencies) return this.relevantDependencies;
 
+		// 相关的依赖
 		this.relevantDependencies = new Set<Module | ExternalModule>();
+
+
+
+		// 下面主要是为了得到 necessaryDependencies / alwaysCheckedDependencies 这两个东西
+		// 然后这两个东西主要是为了tree shaking
 		const necessaryDependencies = new Set<Module | ExternalModule>();
 		const alwaysCheckedDependencies = new Set<Module>();
+		// 初始化为所有经过tree shaking的imports
 		const dependencyVariables = new Set(this.includedImports);
-
+		// 如果是入口模块，或者有动态导入，或者有导出，或者有隐式加载的模块
+		// 处理导出， 为啥？
 		if (
 			this.info.isEntry ||
 			this.includedDynamicImporters.length > 0 ||
 			this.namespace.included ||
 			this.implicitlyLoadedAfter.size > 0
 		) {
+			// 遍历所有导出名
+			// 遍历导出干嘛...
 			for (const exportName of [...this.getReexports(), ...this.getExports()]) {
 				const [exportedVariable] = this.getVariableForExportName(exportName);
 				if (exportedVariable?.included) {
@@ -466,6 +486,9 @@ export default class Module {
 				}
 			}
 		}
+
+		// 处理 alwaysCheckedDependencies 和 necessaryDependencies
+		// 暂时...不管了
 		for (let variable of dependencyVariables) {
 			const sideEffectDependencies = this.sideEffectDependenciesByVariable.get(variable);
 			if (sideEffectDependencies) {
@@ -480,6 +503,11 @@ export default class Module {
 			}
 			necessaryDependencies.add(variable.module!);
 		}
+
+
+
+		// 不做tree shaking的话， 上面俩IF就不用执行了吧
+		// 这里也没管 dependencyVariables / necessaryDependencies / alwaysCheckedDependencies 啥的呀
 		if (!this.options.treeshake || this.info.moduleSideEffects === 'no-treeshake') {
 			for (const dependency of this.dependencies) {
 				this.relevantDependencies.add(dependency);
@@ -491,9 +519,14 @@ export default class Module {
 				alwaysCheckedDependencies
 			);
 		}
+
+
 		for (const dependency of necessaryDependencies) {
 			this.relevantDependencies.add(dependency);
 		}
+
+
+
 		return this.relevantDependencies;
 	}
 
@@ -1310,6 +1343,11 @@ export default class Module {
 		return [...syntheticNamespaces, ...externalNamespaces];
 	}
 
+	// 在Graph建立的最后阶段， includeStatements， 会进行tree-shaking
+	// 调用每个module的include方法， 然后是this.ast.include, 接着是Program.include(this.ast是一个Program node 实例)
+	// Program.include内会遍历AST实例树， 调用每一个节点的include方法
+	// 遇到了ImportExpression时会调用下面的函数
+
 	private includeDynamicImport(node: ImportExpression): void {
 		const resolution = (
 			this.dynamicImports.find(dynamicImport => dynamicImport.node === node) as {
@@ -1318,6 +1356,7 @@ export default class Module {
 		).resolution;
 
 		if (resolution instanceof Module) {
+			// 将自身添加到 【被动态导入的module】的 includedDynamicImporters 内
 			resolution.includedDynamicImporters.push(this);
 
 			const importedNames = this.options.treeshake
