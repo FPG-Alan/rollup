@@ -252,6 +252,7 @@ export function getChunkAssignments(
 
 	// This mutates initialChunks but also clears
 	// dynamicallyDependentEntriesByDynamicEntry as side effect
+	// 这里应该就是优化的函数了
 	removeUnnecessaryDependentEntries(
 		initialChunks,
 		dynamicallyDependentEntriesByDynamicEntry,
@@ -543,17 +544,28 @@ function removeUnnecessaryDependentEntries(
 ) {
 	// The indices correspond to the indices in allEntries. The chunks correspond
 	// to bits in the bigint values where chunk 0 is the lowest bit.
+	// 这些索引对应 allEntries 中的索引
+	// 这些chunk对应于bitint值中的bit， chunk0在最低位（右侧）
 	const staticDependenciesPerEntry: bigint[] = allEntries.map(() => 0n);
+
+	// 每一个chunk已经加载的模块
+	// 为何在 "某一个动态入口点, 他所有的引入者模块的依赖入口点集合" 中的就是-1n?, -1n代表什么
+	// 假设一个动态入口点， 所有引入他的模块的依赖入口点集合应该就是此时内存中存在的？
+	// 似乎应该是交集啊， 但dynamicallyDependentEntriesByDynamicEntry是一个并集吧
 	const alreadyLoadedChunksPerEntry: bigint[] = allEntries.map((_entry, entryIndex) =>
 		dynamicallyDependentEntriesByDynamicEntry.has(entryIndex) ? -1n : 0n
 	);
 
 	// This toggles the bits for each chunk that is a dependency of an entry
+	// staticDependenciesPerEntry 的初始值都是0， 所以这一趟下来， 就是都变成掩码
+	// 掩码随着遍历所有chunks， 依次左移
+	// 那么 staticDependenciesPerEntry[entryIndex] 也随着chunk依次左移
 	let chunkMask = 1n;
 	for (const { dependentEntries } of chunks) {
 		for (const entryIndex of dependentEntries) {
 			staticDependenciesPerEntry[entryIndex] |= chunkMask;
 		}
+		// 掩码从最右侧（低位）开始，一次左移
 		chunkMask <<= 1n;
 	}
 
@@ -561,11 +573,15 @@ function removeUnnecessaryDependentEntries(
 	// If we no longer want this, we should make a copy here.
 	const updatedDynamicallyDependentEntriesByDynamicEntry =
 		dynamicallyDependentEntriesByDynamicEntry;
+
 	for (const [
 		dynamicEntryIndex,
 		updatedDynamicallyDependentEntries
 	] of updatedDynamicallyDependentEntriesByDynamicEntry) {
+		// 消费掉
 		updatedDynamicallyDependentEntriesByDynamicEntry.delete(dynamicEntryIndex);
+
+		// 加载过的模块，
 		const previousLoadedModules = alreadyLoadedChunksPerEntry[dynamicEntryIndex];
 		let newLoadedModules = previousLoadedModules;
 		for (const entryIndex of updatedDynamicallyDependentEntries) {
