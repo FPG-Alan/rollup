@@ -173,5 +173,8 @@
       "import": "./dist/es/getLogFilter.js"
     },
     "./dist/*": "./dist/*"
+  },
+  "dependencies": {
+    "vite": "^4.4.2"
   }
 }

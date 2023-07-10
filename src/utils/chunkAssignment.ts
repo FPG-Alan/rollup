@@ -225,34 +225,33 @@ export function getChunkAssignments(
 	minChunkSize: number,
 	log: LogHandler
 ): ChunkDefinitions {
-
 	// 暂时不考虑manualChunks的情况, 这俩变量都是空的
 	const { chunkDefinitions, modulesInManualChunks } =
 		getChunkDefinitionsFromManualChunks(manualChunkAliasByEntry);
 
-
 	const {
-		// 所有入口点
 		allEntries,
-		// 所有模块的依赖入口点
 		dependentEntriesByModule,
-		// 所有动态模块的引入者的依赖入口点
 		dynamicallyDependentEntriesByDynamicEntry,
-		// 所有入口内的动态引入模块作为入口点的数字索引
 		dynamicImportsByEntry
 	} = analyzeModuleGraph(entries);
 
 	// Each chunk is identified by its position in this array
-	// 每个块都通过其在该数组中的位置来标识
-
-	// 这里就是上面注释中的core algorithm, 所有具有一样依赖入口点的module被集合在一起形成一个chunk
+	// 这里拿到了最初的chunks， 就是同一组依赖入口点的所有模块
 	const initialChunks = getChunksFromDependentEntries(
 		getModulesWithDependentEntries(dependentEntriesByModule, modulesInManualChunks)
 	);
 
+	// [
+	// 	{ dependentEntries: Set(1) { 0 }, modules: [ [Module] ] },
+	// 	{ dependentEntries: Set(1) { 1 }, modules: [ [Module] ] },
+	// 	{ dependentEntries: Set(2) { 0, 1 }, modules: [ [Module] ] }
+	// ]
+
+	console.log(initialChunks);
 	// This mutates initialChunks but also clears
 	// dynamicallyDependentEntriesByDynamicEntry as side effect
-	// 这里应该就是优化的函数了
+	// 这个函数修改了 initialChunks， 同时也清除了 dynamicallyDependentEntriesByDynamicEntry （作为副作用）
 	removeUnnecessaryDependentEntries(
 		initialChunks,
 		dynamicallyDependentEntriesByDynamicEntry,
@@ -271,6 +270,8 @@ export function getChunkAssignments(
 			modules
 		}))
 	);
+
+	// 返回chunk definitions
 	return chunkDefinitions;
 }
 
@@ -320,7 +321,6 @@ function analyzeModuleGraph(entries: Iterable<Module>): {
 	dynamicImportsByEntry: ReadonlyArray<ReadonlySet<number>>;
 	dynamicallyDependentEntriesByDynamicEntry: Map<number, Set<number>>;
 } {
-
 	const dynamicEntryModules = new Set<Module>();
 	// 每个模块的 [依赖入口点]
 	const dependentEntriesByModule: Map<Module, Set<number>> = new Map();
@@ -376,7 +376,6 @@ function analyzeModuleGraph(entries: Iterable<Module>): {
 					// 动态导入的模块不在 allEntriesSet 中
 					!allEntriesSet.has(resolution)
 				) {
-
 					// 压入当前入口点的动态导入模块集合
 					dynamicEntryModules.add(resolution);
 					// 压入 allEntriesSet, 作为入口点进入后续的外层循环
@@ -398,26 +397,18 @@ function analyzeModuleGraph(entries: Iterable<Module>): {
 		entryIndex++;
 	}
 
-
 	// 基本上就是除了一开始的入口点， 遇到动态导入的模块就生成一个新的入口点
 	const allEntries = [...allEntriesSet];
-	// 转成数字索引
-	// dynamicEntries 即所有的动态入口点的index set
-	// dynamicImportsByEntry 即 所有入口内的动态引入模块作为入口点的数字索引
 	const { dynamicEntries, dynamicImportsByEntry } = getDynamicEntries(
 		allEntries,
 		dynamicEntryModules,
-		// 每一个人口点内的所有动态导入
 		dynamicImportModulesByEntry
 	);
 	return {
-		// 所有入口点
 		allEntries,
-		// 每个模块的 依赖入口点 集合
 		dependentEntriesByModule,
 
-		// 动态入口点的引入者们， 他们也有自己的依赖入口点
-		// 这个map就是, 某一个动态入口点, 他所有的引入者模块的依赖入口点集合
+		// 估计是为了后续优化， 收集了动态入口点的导入者的依赖入口点的并集
 		dynamicallyDependentEntriesByDynamicEntry: getDynamicallyDependentEntriesByDynamicEntry(
 			dependentEntriesByModule,
 			dynamicEntries,
@@ -427,11 +418,6 @@ function analyzeModuleGraph(entries: Iterable<Module>): {
 	};
 }
 
-
-/**
- * 1. 得到每个动态入口的数字索引, 即 dynamicEntries
- * 2. 得到每个入口内的动态引入模块作为入口点的数字索引, 即 dynamicImportsByEntry
- */
 function getDynamicEntries(
 	allEntries: Module[],
 	dynamicEntryModules: Set<Module>,
@@ -461,30 +447,26 @@ function getDynamicallyDependentEntriesByDynamicEntry(
 	dynamicEntries: ReadonlySet<number>,
 	allEntries: ReadonlyArray<Module>
 ): Map<number, Set<number>> {
-	// 动态入口点的引入者们， 他们也有自己的依赖入口点
-	// 这个map就是, 某一个动态入口点, 他所有的引入者模块的依赖入口点集合
+	// 每个 动态入口点 的动态加载者的依赖入口点的 [交or并?] 集
+	// 这个动态入口点进来的时候， 有哪些模块是确定在内存中了？
+	// 是不是所有动态加载这个入口点的模块的依赖入口点的交集？
 	const dynamicallyDependentEntriesByDynamicEntry: Map<number, Set<number>> = new Map();
-	for (const dynamicEntryIndex of dynamicEntries) {
-		// 迭代每个动态入口
 
-		// 初始化
+	for (const dynamicEntryIndex of dynamicEntries) {
 		const dynamicallyDependentEntries = getOrCreate(
 			dynamicallyDependentEntriesByDynamicEntry,
 			dynamicEntryIndex,
 			getNewSet<number>
 		);
-
-
-		// 动态入口模块
 		const dynamicEntry = allEntries[dynamicEntryIndex];
-		// 迭代器, 允许不完全迭代(依靠generator)
-		// 忽略 implicitlyLoadedAfter， 就是迭代所有的动态导入这个动态入口点的模块
+		// for in 直接创建好了所有的迭代函数
+		// concat lazy内部使用了生成器， 来懒创建迭代器
 		for (const importer of concatLazy([
 			dynamicEntry.includedDynamicImporters,
 			dynamicEntry.implicitlyLoadedAfter
 		])) {
-
-			// 遍历 动态导入 这个动态入口点的模块的依赖入口点
+			// 遍历某个 importer 的依赖入口点， 一个个的加入到这个set中去
+			// 那看来是并集
 			for (const entry of dependentEntriesByModule.get(importer)!) {
 				dynamicallyDependentEntries.add(entry);
 			}
@@ -500,17 +482,10 @@ function getChunksFromDependentEntries(
 		[signature: string]: ModulesWithDependentEntries;
 	} = Object.create(null);
 	for (const { dependentEntries, modules } of modulesWithDependentEntries) {
-		// js原生的bigint, 这玩意预估可能大于2^53
 		let chunkSignature = 0n;
-		// 这里有点难理解...
-		// 如何保证, 依赖入口点, 也就是 dependentEntries 一样的时候, chunkSignature一定是一样的?
-		// 现在便于理解, 可以假定这个条件
 		for (const entryIndex of dependentEntries) {
 			chunkSignature |= 1n << BigInt(entryIndex);
 		}
-
-		// 懵逼了, 还有这个运算符... 或等于运算符, 左侧变量的值为false时赋值右侧的表达式
-		// 这里就是, 相同的依赖入口点的所有module, 都推到一起
 		(chunkModules[String(chunkSignature)] ||= {
 			dependentEntries: new Set(dependentEntries),
 			modules: []
@@ -535,6 +510,9 @@ function* getModulesWithDependentEntries(
  * first argument. It will also consume its second argument, so if
  * dynamicallyDependentEntriesByDynamicEntry is ever needed after this, we
  * should make a copy.
+ * 这个函数移除了chunks中的不必要的动态入口点
+ * 也会消费第二个参数， 所以后面如果还需要 dynamicallyDependentEntriesByDynamicEntry
+ * 我们应该复制一份
  */
 function removeUnnecessaryDependentEntries(
 	chunks: ModulesWithDependentEntries[],
@@ -544,15 +522,17 @@ function removeUnnecessaryDependentEntries(
 ) {
 	// The indices correspond to the indices in allEntries. The chunks correspond
 	// to bits in the bigint values where chunk 0 is the lowest bit.
-	// 这些索引对应 allEntries 中的索引
-	// 这些chunk对应于bitint值中的bit， chunk0在最低位（右侧）
+
+	// 用一个二进制的bigint来表示所有的chunk， chunk0在最低位
+	// 先初始化为0
 	const staticDependenciesPerEntry: bigint[] = allEntries.map(() => 0n);
 
-	// 每一个chunk已经加载的模块
-	// 为何在 "某一个动态入口点, 他所有的引入者模块的依赖入口点集合" 中的就是-1n?, -1n代表什么
-	// 假设一个动态入口点， 所有引入他的模块的依赖入口点集合应该就是此时内存中存在的？
-	// 似乎应该是交集啊， 但dynamicallyDependentEntriesByDynamicEntry是一个并集吧
+	// 每个入口点的， 已经加载的chunk...为什么是chunk？是否等同于module？
 	const alreadyLoadedChunksPerEntry: bigint[] = allEntries.map((_entry, entryIndex) =>
+		// 如果在动态入口里， 就是-1， 否则就是0
+		// -1的二进制是每一位都是1， 为什么要这么初始化， 具体意思是什么
+		// 如果不是动态入口点， 比如a， 他的已经加载的chunk就是0， 意思是没有加载任何chunk？
+		// 那么动态入口点的-1是指加载了任何模块？？？
 		dynamicallyDependentEntriesByDynamicEntry.has(entryIndex) ? -1n : 0n
 	);
 
@@ -561,11 +541,24 @@ function removeUnnecessaryDependentEntries(
 	// 掩码随着遍历所有chunks， 依次左移
 	// 那么 staticDependenciesPerEntry[entryIndex] 也随着chunk依次左移
 	let chunkMask = 1n;
+	// 00000000001
+	// 下面这段循环的意义在于， 对每个入口来说， 自己是哪几个chunk的依赖入口点
+	// 已 a->b, a=>c, c->b的例子来说，
+	// 入口点是a, c,
+	// initialChunk, 也就是chunks是
+	// 	chunk 0 包含 a, 依赖入口点是 a
+	//  chunk 1 包含 c, 依赖入口点是 c
+	//  chunk 2 包含 b, 依赖入口点是 a, c
+
+	// 那么 staticDependenciesPerEntry[0] 应该表述为， 入口点a会出现在 chunk 0, chunk 2上， 也就是 000 101 = 5
+	// staticDependenciesPerEntry[1] 应该表述为， 入口点c会出现在 chunk 1, chunk 2上， 也就是 000 110 = 6
 	for (const { dependentEntries } of chunks) {
 		for (const entryIndex of dependentEntries) {
+			// 初始值都是0，按位或等同于赋值
 			staticDependenciesPerEntry[entryIndex] |= chunkMask;
 		}
-		// 掩码从最右侧（低位）开始，一次左移
+		// 左移一位之后， 就是
+		// 00000000010
 		chunkMask <<= 1n;
 	}
 
@@ -575,21 +568,38 @@ function removeUnnecessaryDependentEntries(
 		dynamicallyDependentEntriesByDynamicEntry;
 
 	for (const [
+		// 动态入口点的索引
 		dynamicEntryIndex,
+		// 加载这个动态入口点的模块的依赖入口点的并集
 		updatedDynamicallyDependentEntries
 	] of updatedDynamicallyDependentEntriesByDynamicEntry) {
-		// 消费掉
+		// 消耗掉
 		updatedDynamicallyDependentEntriesByDynamicEntry.delete(dynamicEntryIndex);
-
-		// 加载过的模块，
+		// 按照上面初始化， 这里 previousLoadedModules 应该是-1
 		const previousLoadedModules = alreadyLoadedChunksPerEntry[dynamicEntryIndex];
 		let newLoadedModules = previousLoadedModules;
+
+		// 遍历加载这个动态入口点的模块的依赖入口点并集
+		// 最终得到加载这个动态入口点的模块的依赖入口点所在的chunk的交集
 		for (const entryIndex of updatedDynamicallyDependentEntries) {
+			// newLoadedModules 初始-1， 也就是每个二进制位都是1， 和任何数按位与都是那个数本身
+			// 如果有第二轮循环， 就应该两轮循环的交集
 			newLoadedModules &=
+				// 当前入口出现在哪些chunk里面 和 当前入口已经加载了哪些chunk 按位或
+				// 就应该能得到当前入口已经加载了哪些chunk
 				staticDependenciesPerEntry[entryIndex] | alreadyLoadedChunksPerEntry[entryIndex];
 		}
+
+		// 上面的例子来说的话， newLoadedModules现在应该是 000 101
+		// 而 previousLoadedModules 是初始化的 -1， 111 111
+		// 两者不等， 进入条件语句块
+		console.log(newLoadedModules);
 		if (newLoadedModules !== previousLoadedModules) {
+			// 当前动态入口被加进来时 已经在内存中的chunk
 			alreadyLoadedChunksPerEntry[dynamicEntryIndex] = newLoadedModules;
+
+			// 这里我暂时不明白
+			console.log(dynamicImportsByEntry[dynamicEntryIndex]);
 			for (const dynamicImport of dynamicImportsByEntry[dynamicEntryIndex]) {
 				getOrCreate(
 					updatedDynamicallyDependentEntriesByDynamicEntry,
