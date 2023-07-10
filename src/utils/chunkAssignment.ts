@@ -539,7 +539,7 @@ function removeUnnecessaryDependentEntries(
 	// This toggles the bits for each chunk that is a dependency of an entry
 	let chunkMask = 1n;
 	// 00000000001
-	// 下面这段循环的意义在于， 对每个入口来说， 自己是第几个chunk的依赖入口点
+	// 下面这段循环的意义在于， 对每个入口来说， 自己是哪几个chunk的依赖入口点
 	// 已 a->b, a=>c, c->b的例子来说，
 	// 入口点是a, c,
 	// initialChunk, 也就是chunks是
@@ -577,14 +577,26 @@ function removeUnnecessaryDependentEntries(
 		let newLoadedModules = previousLoadedModules;
 
 		// 遍历加载这个动态入口点的模块的依赖入口点并集
+		// 最终得到加载这个动态入口点的模块的依赖入口点所在的chunk的交集
 		for (const entryIndex of updatedDynamicallyDependentEntries) {
-			// 最后再跟 newLoadedModules 按位与， 实际的意义又是什么？
+			// newLoadedModules 初始-1， 也就是每个二进制位都是1， 和任何数按位与都是那个数本身
+			// 如果有第二轮循环， 就应该两轮循环的交集
 			newLoadedModules &=
-				// 这俩或我可以调试出是 000001和0000000在按位或， 但是实际的意义是什么呢？
+				// 当前入口出现在哪些chunk里面 和 当前入口已经加载了哪些chunk 按位或
+				// 就应该能得到当前入口已经加载了哪些chunk
 				staticDependenciesPerEntry[entryIndex] | alreadyLoadedChunksPerEntry[entryIndex];
 		}
+
+		// 上面的例子来说的话， newLoadedModules现在应该是 000 101
+		// 而 previousLoadedModules 是初始化的 -1， 111 111
+		// 两者不等， 进入条件语句块
+		console.log(newLoadedModules);
 		if (newLoadedModules !== previousLoadedModules) {
+			// 当前动态入口被加进来时 已经在内存中的chunk
 			alreadyLoadedChunksPerEntry[dynamicEntryIndex] = newLoadedModules;
+
+			// 这里我暂时不明白
+			console.log(dynamicImportsByEntry[dynamicEntryIndex]);
 			for (const dynamicImport of dynamicImportsByEntry[dynamicEntryIndex]) {
 				getOrCreate(
 					updatedDynamicallyDependentEntriesByDynamicEntry,
