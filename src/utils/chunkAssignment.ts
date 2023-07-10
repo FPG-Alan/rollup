@@ -248,7 +248,7 @@ export function getChunkAssignments(
 	// 	{ dependentEntries: Set(2) { 0, 1 }, modules: [ [Module] ] }
 	// ]
 
-	console.log(initialChunks);
+	// console.log(initialChunks);
 	// This mutates initialChunks but also clears
 	// dynamicallyDependentEntriesByDynamicEntry as side effect
 	// 这个函数修改了 initialChunks， 同时也清除了 dynamicallyDependentEntriesByDynamicEntry （作为副作用）
@@ -520,6 +520,7 @@ function removeUnnecessaryDependentEntries(
 	dynamicImportsByEntry: ReadonlyArray<ReadonlySet<number>>,
 	allEntries: ReadonlyArray<Module>
 ) {
+	console.log(chunks, dynamicallyDependentEntriesByDynamicEntry, dynamicImportsByEntry);
 	// The indices correspond to the indices in allEntries. The chunks correspond
 	// to bits in the bigint values where chunk 0 is the lowest bit.
 
@@ -550,8 +551,8 @@ function removeUnnecessaryDependentEntries(
 	//  chunk 1 包含 c, 依赖入口点是 c
 	//  chunk 2 包含 b, 依赖入口点是 a, c
 
-	// 那么 staticDependenciesPerEntry[0] 应该表述为， 入口点a会出现在 chunk 0, chunk 2上， 也就是 000 101 = 5
-	// staticDependenciesPerEntry[1] 应该表述为， 入口点c会出现在 chunk 1, chunk 2上， 也就是 000 110 = 6
+	// 那么 staticDependenciesPerEntry[0] 应该表述为， 入口点a是 chunk 0, chunk 2两个chunk的依赖入口点， 也就是 000 101 = 5
+	// staticDependenciesPerEntry[1] 应该表述为， 入口点c是 chunk 1, chunk 2两个chunk的依赖入口点， 也就是 000 110 = 6
 	for (const { dependentEntries } of chunks) {
 		for (const entryIndex of dependentEntries) {
 			// 初始值都是0，按位或等同于赋值
@@ -590,15 +591,16 @@ function removeUnnecessaryDependentEntries(
 				staticDependenciesPerEntry[entryIndex] | alreadyLoadedChunksPerEntry[entryIndex];
 		}
 
-		// 上面的例子来说的话， newLoadedModules现在应该是 000 101
+		// 上面的例子来说的话， newLoadedModules现在应该是 000 101, 也就是， c被动态加载进来的时候， 内存里应该有chunk0， chunk2
 		// 而 previousLoadedModules 是初始化的 -1， 111 111
 		// 两者不等， 进入条件语句块
-		console.log(newLoadedModules);
+		console.log('newLoadedModules', newLoadedModules);
 		if (newLoadedModules !== previousLoadedModules) {
 			// 当前动态入口被加进来时 已经在内存中的chunk
 			alreadyLoadedChunksPerEntry[dynamicEntryIndex] = newLoadedModules;
 
-			// 这里我暂时不明白
+			// 动态入口点自己也动态引入了一些其他模块， 比如c=> d
+			// 用于后续处理
 			console.log(dynamicImportsByEntry[dynamicEntryIndex]);
 			for (const dynamicImport of dynamicImportsByEntry[dynamicEntryIndex]) {
 				getOrCreate(
@@ -613,6 +615,15 @@ function removeUnnecessaryDependentEntries(
 	// Remove entries from dependent entries if a chunk is already loaded without
 	// that entry.
 	chunkMask = 1n;
+	// [
+	// 	{ dependentEntries: Set(1) { 0 }, modules: [ [Module] ] },
+	// 	{ dependentEntries: Set(1) { 1 }, modules: [ [Module] ] },
+	// 	{ dependentEntries: Set(2) { 0, 1 }, modules: [ [Module] ] }
+	// ]
+	// chunk0, entry 0， 也就是a， 在a进来时没有任何已经加载的chunk， 因此是 000 000， 按位与后不满足条件
+	// chunk1, entry1， 也就是c, c是动态入口点， 已经加载的chunk是chunk0， chunk2， 因此是 000 101， 和000 010 按位与后是 000 000， 不满足条件
+	// chunk2， entry0， 是a， 同第一次循环， 按位与后不满足条件
+	// chunk2， entry1， 是c，已经加载的chunk是chunk0， chunk2， 也就是000 101， 和000 100按位与后是 000 100， 满足条件， 删除
 	for (const { dependentEntries } of chunks) {
 		for (const entryIndex of dependentEntries) {
 			if ((alreadyLoadedChunksPerEntry[entryIndex] & chunkMask) === chunkMask) {
