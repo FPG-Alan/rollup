@@ -95,7 +95,6 @@ export class ModuleLoader {
 			: () => true;
 	}
 
-
 	// bundle时处理manualChunk使用
 	// 例如 {vandor: ['react', 'react-dom']}
 	// 会以 ['react', 'react-dom'] 为参数来调用这个函数
@@ -269,7 +268,6 @@ export class ModuleLoader {
 		);
 	}
 
-
 	// 加载文件， 读取内容，
 	private async addModuleSource(
 		id: string,
@@ -351,7 +349,6 @@ export class ModuleLoader {
 		return loadNewModulesPromise;
 	}
 
-
 	// 加载动态导入的模块
 	// fetchModule->fetchModuleDependencies->fetchDynamicDependencies
 	private async fetchDynamicDependencies(
@@ -420,7 +417,6 @@ export class ModuleLoader {
 		this.modulesById.set(id, module);
 		this.graph.watchFiles[id] = true;
 
-
 		// addModuleSource -> Module.setSource
 		// addModuleSource会加载文件内容， 并在module模块内添加处理ast
 		// 在addModuleSource执行完成后, 我们已经拥有了一棵对应当前module的AST的节点实例树
@@ -486,7 +482,6 @@ export class ModuleLoader {
 		// To handle errors when resolving dependencies or in moduleParsed
 		await loadAndResolveDependenciesPromise;
 	}
-
 
 	// 递归处理module树的关键节点
 	// fetchModule后， fetchStaticDependencies / fetchDynamicDependencies 均会走到这个函数
@@ -705,7 +700,6 @@ export class ModuleLoader {
 		return resolvedId;
 	}
 
-
 	// 加载入口模块
 	private async loadEntryModule(
 		unresolvedId: string,
@@ -743,7 +737,6 @@ export class ModuleLoader {
 					: logImplicitDependantCannotBeExternal(unresolvedId, implicitlyLoadedBefore)
 			);
 		}
-
 
 		// 获取模块
 		return this.fetchModule(
