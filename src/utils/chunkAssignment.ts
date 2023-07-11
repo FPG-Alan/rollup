@@ -414,6 +414,8 @@ function analyzeModuleGraph(entries: Iterable<Module>): {
 			dynamicEntries,
 			allEntries
 		),
+
+		//
 		dynamicImportsByEntry
 	};
 }
@@ -481,11 +483,16 @@ function getChunksFromDependentEntries(
 	const chunkModules: {
 		[signature: string]: ModulesWithDependentEntries;
 	} = Object.create(null);
+
 	for (const { dependentEntries, modules } of modulesWithDependentEntries) {
+		// 初始化每个chunk的唯一签名
 		let chunkSignature = 0n;
 		for (const entryIndex of dependentEntries) {
+			// 每个入口点都有唯一的索引，用1左移索引位，就在二进制数上标记了这个入口
+			// 所有入口的二进制数在一起按位或，每个chunk就有了一个唯一的二进制数作为签名
 			chunkSignature |= 1n << BigInt(entryIndex);
 		}
+
 		(chunkModules[String(chunkSignature)] ||= {
 			dependentEntries: new Set(dependentEntries),
 			modules: []
