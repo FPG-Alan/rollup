@@ -203,14 +203,13 @@ export default class Bundle {
 		// inlineDynamicImports 是配置项， 如果为true则会把动态导入的模块内联进来， 而不是单独一个chunk
 		for (const { alias, modules } of inlineDynamicImports
 			? [{ alias: null, modules: includedModules }]
-		// preserveModules 也是配置项，如果为true就是每个module对应一个chunk， 这基本可以认为是不打包...
-			: preserveModules
+			: // preserveModules 也是配置项，如果为true就是每个module对应一个chunk， 这基本可以认为是不打包...
+			preserveModules
 			? includedModules.map(module => ({ alias: null, modules: [module] }))
-
-		// 嘿嘿哈， 我觉得我找的就是你！！！
-		// 卧槽， 这玩意注释长的一逼啊
-			: getChunkAssignments(
-				// 用的是树形结构的数据
+			: // 嘿嘿哈， 我觉得我找的就是你！！！
+			  // 卧槽， 这玩意注释长的一逼啊
+			  getChunkAssignments(
+					// 用的是树形结构的数据
 
 					this.graph.entryModules,
 					manualChunkAliasByEntry,

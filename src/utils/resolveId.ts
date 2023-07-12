@@ -46,6 +46,7 @@ export async function resolveId(
 
 	// external modules (non-entry modules that start with neither '.' or '/')
 	// are skipped at this stage.
+	// 外部模块 （非入口模块，且不是以'.' 或 '/'开头的）
 	if (importer !== undefined && !isAbsolute(source) && source[0] !== '.') return null;
 
 	// `resolve` processes paths from right to left, prepending them until an

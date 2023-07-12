@@ -673,6 +673,7 @@ interface ChunkPartition {
 /**
  * This function tries to get rid of small chunks by merging them with other
  * chunks.
+ * merge 小chunk
  *
  * We can only merge chunks safely if after the merge, loading any entry point
  * in any allowed order will not trigger side effects that should not have been
@@ -680,13 +681,17 @@ interface ChunkPartition {
  * global variable mutations or potentially thrown errors, details do not
  * matter here, and we just discern chunks without side effects (pure chunks)
  * from other chunks.
+ * 不能有副作用
  *
  * As a first step, we assign each pre-generated chunk with side effects a
  * label. I.e. we have side effect "A" if the non-pure chunk "A" is loaded.
+ * 首先， 标记出存在副作用的chunk
  *
  * Now to determine the side effects of loading a chunk, one also has to take
  * the side effects of its dependencies into account. So if A depends on B
  * (A -> B) and both have side effects, loading A triggers effects AB.
+ * 现在需要确定加载一个chunk的副作用， 有一个需要考虑的是依赖的模块的副作用也要计算进来
+ * 比如A->B, 且A和B都有副作用， 那么加载A会触发副作用AB
  *
  * Now from the previous step we know that each chunk is uniquely determine by
  * the entry points that depend on it and cause it to load, which we will call
@@ -698,6 +703,8 @@ interface ChunkPartition {
  * loaded. Basically, it is the intersection of all chunks loaded by the
  * dependent entry points of a given chunk. We call the corresponding side
  * effects the correlated side effects of that chunk.
+ * 每个chunk都是具有相同依赖入口点的module组成的，类似的，每个chunk能触发的副作用也是
+ * 可以确定的， 基本上， 就是这个chunk的依赖入口点加载的所有块的交集， 我们称之为相关副作用
  *
  * Example:
  * X -> ABC, Y -> ADE, A-> F, B -> D
@@ -706,6 +713,7 @@ interface ChunkPartition {
  * be in memory even though neither D nor A is a dependency of the other.
  * If all have side effects, we call ADF the correlated side effects of A. The
  * correlated side effects need to remain constant when merging chunks.
+ *
  *
  * In contrast, we have the dependency side effects of A, which represents
  * the side effects we trigger if we directly load A. In this example, the
@@ -753,6 +761,7 @@ function getOptimizedChunks(
 	log: LogHandler
 ): { modules: Module[] }[] {
 	timeStart('optimize chunks', 3);
+	// 区分大小快， 填充chunkInfo, 填充sideEffectAtoms
 	const chunkPartition = getPartitionedChunks(initialChunks, numberOfEntries, minChunkSize);
 	if (!chunkPartition) {
 		timeEnd('optimize chunks', 3);
@@ -763,6 +772,8 @@ function getOptimizedChunks(
 			'info',
 			logOptimizeChunkStatus(initialChunks.length, chunkPartition.small.size, 'Initially')
 		);
+
+	// 开始合并
 	mergeChunks(chunkPartition, minChunkSize);
 	minChunkSize > 1 &&
 		log(
@@ -786,6 +797,7 @@ function getPartitionedChunks(
 	const bigChunks: ChunkDescription[] = [];
 	const chunkByModule = new Map<Module, ChunkDescription>();
 	const sizeByAtom: number[] = [];
+	// 代表哪些chunk存在副作用
 	let sideEffectAtoms = 0n;
 	let containedAtoms = 1n;
 	for (const { dependentEntries, modules } of initialChunks) {
@@ -819,12 +831,16 @@ function getPartitionedChunks(
 			sideEffectAtoms |= containedAtoms;
 		}
 		(size < minChunkSize ? smallChunks : bigChunks).push(chunkDescription);
+		// 下一个chunk, containedAtom左移一位
 		containedAtoms <<= 1n;
 	}
 	// If there are no small chunks, we will not optimize
 	if (smallChunks.length === 0) {
 		return null;
 	}
+
+	// 这一步返回的是所有chunk内的， 存在副作用的外部模块的二进制
+	// 和 sideEffectAtoms 合并后， 就是所有存在副作用的chunk 和 外部模块了
 	sideEffectAtoms |= addChunkDependenciesAndAtomsAndGetSideEffectAtoms(
 		[bigChunks, smallChunks],
 		chunkByModule,
@@ -841,13 +857,18 @@ function getPartitionedChunks(
 
 function mergeChunks(chunkPartition: ChunkPartition, minChunkSize: number) {
 	const { small } = chunkPartition;
+	// 遍历所有小块
 	for (const mergedChunk of small) {
+		// 寻找最佳合并目标， 就是增加ksize最小的那个
 		const bestTargetChunk = findBestMergeTarget(
 			mergedChunk,
 			chunkPartition,
 			// In the default case, we do not accept size increases
+			// 默认情况， 我们不接受k size增加?
 			minChunkSize <= 1 ? 1 : Infinity
 		);
+
+		// 如果存在最佳合并目标
 		if (bestTargetChunk) {
 			const { containedAtoms, correlatedAtoms, modules, pure, size } = mergedChunk;
 			small.delete(mergedChunk);
@@ -878,58 +899,87 @@ function mergeChunks(chunkPartition: ChunkPartition, minChunkSize: number) {
 	}
 }
 
+/**
+ * 1. 填充每个chunkInfo的 containedAtoms 和 correlatedAtoms
+ * 2. 返回记录了所有 存在副作用的外部模块 的 sideEffectAtoms
+ */
 function addChunkDependenciesAndAtomsAndGetSideEffectAtoms(
 	chunkLists: ChunkDescription[][],
 	chunkByModule: Map<Module, ChunkDescription>,
 	numberOfEntries: number,
 	nextAtomSignature: bigint
 ): bigint {
+	// 外部模块
 	const signatureByExternalModule = new Map<ExternalModule, bigint>();
 	let sideEffectAtoms = 0n;
 	const atomsByEntry: bigint[] = [];
+	// 我暂时不明白， atomsByEntry看上去只跟外部模块有关啊
+	// 是不是认为只有外部模块存在副作用？
 	for (let index = 0; index < numberOfEntries; index++) {
 		atomsByEntry.push(0n);
 	}
+
+	// 第一趟循环，
+	// 1. 赋值atomsByEntry，
+	// 2. 填充每个chunk的dependencies
 	for (const chunks of chunkLists) {
 		chunks.sort(compareChunkSize);
 		for (const chunk of chunks) {
 			const { dependencies, dependentEntries, modules } = chunk;
+			// 先遍历所有modules
 			for (const module of modules) {
 				for (const dependency of module.getDependenciesToBeIncluded()) {
 					if (dependency instanceof ExternalModule) {
 						if (dependency.info.moduleSideEffects) {
+							// chunk containedAtoms 收集所有包含副作用的外部模块
 							chunk.containedAtoms |= getOrCreate(signatureByExternalModule, dependency, () => {
 								const signature = nextAtomSignature;
+								// 这个左移给下一个外部模块用
 								nextAtomSignature <<= 1n;
 								sideEffectAtoms |= signature;
 								return signature;
 							});
 						}
 					} else {
+						// 一个module只会在一个chunk内， 这里找的是当前chunk内的一个module的依赖所在的chunk
+						// 这种 chunk 也就是当前这个chunk的 依赖chunk
 						const dependencyChunk = chunkByModule.get(dependency);
 						if (dependencyChunk && dependencyChunk !== chunk) {
+							// 压入当前chunk info的依赖中去
 							dependencies.add(dependencyChunk);
+							// 入口chunk？
 							dependencyChunk.dependentChunks.add(chunk);
 						}
 					}
 				}
 			}
+
+			// containedAtoms 是当前chunk的所有的存在副作用的外部模块
 			const { containedAtoms } = chunk;
+			// 遍历当前chunk的依赖入口点
 			for (const entryIndex of dependentEntries) {
+				// 依赖入口点内存入当前chunk的 存在副作用的外部模块
 				atomsByEntry[entryIndex] |= containedAtoms;
 			}
 		}
 	}
+	// 第二趟循环
+	// what is the fucking atoms...
+	// chunk的相关atoms是所有依赖入口点的atoms的交集
+	// 什么是他妈的入口点的atoms
 	for (const chunks of chunkLists) {
 		for (const chunk of chunks) {
 			const { dependentEntries } = chunk;
 			// Correlated atoms are the intersection of all entry atoms
+
 			chunk.correlatedAtoms = -1n;
 			for (const entryIndex of dependentEntries) {
 				chunk.correlatedAtoms &= atomsByEntry[entryIndex];
 			}
 		}
 	}
+
+	// 返回。。。所有存在副作用的外部模块？？
 	return sideEffectAtoms;
 }
 
@@ -942,6 +992,7 @@ function findBestMergeTarget(
 	// In the default case, we do not accept size increases
 	for (const targetChunk of concatLazy([small, big])) {
 		if (mergedChunk === targetChunk) continue;
+		// 增加的size
 		const additionalSizeAfterMerge = getAdditionalSizeAfterMerge(
 			mergedChunk,
 			targetChunk,
@@ -980,6 +1031,9 @@ function compareChunkSize(
  * is returned.
  * Merging will not produce cycles if none of the direct non-merged
  * dependencies of a chunk have the other chunk as a transitive dependency.
+ *
+ * 确定如果两个chunk合并， 将会增加多少没有使用的code size
+ * 如果合并会产生循环引用或者增加了不相关的副作用， 会返回 Infinity （寻找最佳合并对象， 也就是最小合并对象， 显然如果size是无限， 那么两个chunk不会被合并）
  */
 function getAdditionalSizeAfterMerge(
 	mergedChunk: ChunkDescription,
@@ -1009,6 +1063,10 @@ function getAdditionalSizeAfterMerge(
 		: Infinity;
 }
 
+/**
+ * TransitiveDependency： 传递依赖， 循环引用的？
+ * NonCorrelatedSideEffect： 不相关的副作用
+ */
 function getAdditionalSizeIfNoTransitiveDependencyOrNonCorrelatedSideEffect(
 	dependentChunk: ChunkDescription,
 	dependencyChunk: ChunkDescription,

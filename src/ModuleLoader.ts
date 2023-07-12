@@ -220,6 +220,7 @@ export class ModuleLoader {
 	) =>
 		this.getResolvedIdWithDefaults(
 			this.getNormalizedResolvedIdWithoutDefaults(
+				// 这里的external配置项里的外部模块吧
 				this.options.external(source, importer, false)
 					? false
 					: await resolveId(
@@ -491,6 +492,7 @@ export class ModuleLoader {
 		resolvedId: ResolvedId
 	): Promise<Module | ExternalModule> {
 		if (resolvedId.external) {
+			// 如果是外部模块， 就不继续递归了， 直接返回
 			const { assertions, external, id, moduleSideEffects, meta } = resolvedId;
 			let externalModule = this.modulesById.get(id);
 			if (!externalModule) {
@@ -550,6 +552,14 @@ export class ModuleLoader {
 		}
 	}
 
+	/**
+	 * 对ResolveIdResult进行归一化处理
+	 * resolveResult 可以是 string | NullValue | false | PartialResolvedId
+	 * @param resolveIdResult
+	 * @param importer
+	 * @param source
+	 * @returns
+	 */
 	private getNormalizedResolvedIdWithoutDefaults(
 		resolveIdResult: ResolveIdResult,
 		importer: string | undefined,

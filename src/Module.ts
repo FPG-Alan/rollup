@@ -201,7 +201,6 @@ function getAndExtendSideEffectModules(variable: Variable, module: Module): Set<
 // implicitlyLoadedBefore 是什么
 // 插件行为
 
-
 export default class Module {
 	readonly alternativeReexportModules = new Map<Variable, Module>();
 	readonly chunkFileNames = new Set<string>();
@@ -423,7 +422,6 @@ export default class Module {
 		return size;
 	}
 
-
 	// 返回当前模块的所有导出名
 	getAllExportNames(): Set<string> {
 		if (this.allExportNames) {
@@ -453,15 +451,12 @@ export default class Module {
 		return this.allExportNames;
 	}
 
-
 	getDependenciesToBeIncluded(): Set<Module | ExternalModule> {
 		// 防止重入
 		if (this.relevantDependencies) return this.relevantDependencies;
 
 		// 相关的依赖
 		this.relevantDependencies = new Set<Module | ExternalModule>();
-
-
 
 		// 下面主要是为了得到 necessaryDependencies / alwaysCheckedDependencies 这两个东西
 		// 然后这两个东西主要是为了tree shaking
@@ -504,8 +499,6 @@ export default class Module {
 			necessaryDependencies.add(variable.module!);
 		}
 
-
-
 		// 不做tree shaking的话， 上面俩IF就不用执行了吧
 		// 这里也没管 dependencyVariables / necessaryDependencies / alwaysCheckedDependencies 啥的呀
 		if (!this.options.treeshake || this.info.moduleSideEffects === 'no-treeshake') {
@@ -520,16 +513,12 @@ export default class Module {
 			);
 		}
 
-
 		for (const dependency of necessaryDependencies) {
 			this.relevantDependencies.add(dependency);
 		}
 
-
-
 		return this.relevantDependencies;
 	}
-
 
 	// 拿模块的导出名, variable是AST领域的东西， 暂时当作是一个实例
 	getExportNamesByVariable(): Map<Variable, string[]> {
@@ -614,7 +603,6 @@ export default class Module {
 		return this.syntheticNamespace;
 	}
 
-
 	getVariableForExportName(
 		name: string,
 		{
@@ -629,7 +617,6 @@ export default class Module {
 			searchedNamesAndModules?: Map<string, Set<Module | ExternalModule>>;
 		} = EMPTY_OBJECT
 	): [variable: Variable | null, indirectExternal?: boolean] {
-
 		// 两种reexport的情况
 		if (name[0] === '*') {
 			if (name.length === 1) {
@@ -820,13 +807,11 @@ export default class Module {
 		);
 	}
 
-
 	// 做了两件事
 	// 一是给所有 importDescriptions/reexportDescriptions 赋值 module 属性
 	// 二是根据 this.exportAllSources 找到对应的 module, 填充 this.exportAllModules
 	// 符合 "link" 这个动作, 但名字改为 linkImportsAndExports 更明确
 	linkImports(): void {
-
 		// 遍历 importDescriptions, 每个 importDescription 找到对应的 module, 写入对应 importDescriptions
 		this.addModulesToImportDescriptions(this.importDescriptions);
 		// 遍历 reexportDescriptions, 每个 reexportDescription 找到对应的 module, 写入对应 reexportDescriptions
